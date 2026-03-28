@@ -11,12 +11,12 @@
 /* ── CSS Custom Properties ─────────────────────────────────── */
 :root {
   /* Greens — cricket pitch, forest, authority */
-  --green-900: #0d2b18;
-  --green-800: #1a3a24;
-  --green-700: #1e5c30;
-  --green-600: #246b38;
-  --green-500: #2a7d42;
-  --green-400: #3a9e56;
+  --green-900: #0d222b;
+  --green-800: #1a243a;
+  --green-700: #1e415c;
+  --green-600: #244b6b;
+  --green-500: #2a607d;
+  --green-400: #3a799e;
   --green-100: #e8f5ed;
   --green-50:  #f4faf6;
 
