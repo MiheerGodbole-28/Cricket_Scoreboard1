@@ -110,13 +110,10 @@ function setupEventListeners() {
     const commentaryBtn = document.getElementById('loadCommentaryBtn');
     if (commentaryBtn) commentaryBtn.addEventListener('click', toggleCommentary);
 
-    document.querySelectorAll('.run-btn').forEach(btn =>
+    // FIX 1: Exclude .nb-run-btn so clicking a no-ball run button does NOT
+    // also fire this handler with data-runs=NaN (nb buttons only have data-nbr).
+    document.querySelectorAll('.run-btn:not(.nb-run-btn)').forEach(btn =>
         btn.addEventListener('click', function () {
-            // nb-run-btn buttons share the run-btn class for styling but have their
-            // own separate handler (confirmNoBall). Guard here prevents them from
-            // also firing this handler, which would produce NaN and count the
-            // no-ball delivery as a legal ball in the over tally.
-            if (this.classList.contains('nb-run-btn')) return;
             recordBall(parseInt(this.getAttribute('data-runs')), false, null);
         })
     );
@@ -849,6 +846,8 @@ async function showPreviousMatchDetails(matchId) {
         document.getElementById('prevTeam2Overs').textContent = `(${formatOvers(i2.balls)} ov)`;
         loadPreviousInningsScorecard(i1, 1);
         loadPreviousInningsScorecard(i2, 2);
+        // FIX 3: Load ball-by-ball commentary per innings from the balls table
+        loadPreviousMatchCommentary(matchId);
     }
     document.getElementById('previousMatchDetails').scrollIntoView({ behavior: 'smooth' });
 }
@@ -878,6 +877,40 @@ function loadPreviousInningsScorecard(innings, num) {
     } else {
         bowlingBody.innerHTML = '<tr><td colspan="7" class="no-data-cell">No data</td></tr>';
     }
+}
+
+// FIX 3: Ball-by-ball commentary per innings for previous matches
+async function loadPreviousMatchCommentary(matchId) {
+    const { data, error } = await db
+        .from('balls')
+        .select('*')
+        .eq('match_id', matchId)
+        .order('innings_number', { ascending: true })
+        .order('created_at', { ascending: true });
+
+    [1, 2].forEach(num => {
+        const container = document.getElementById(`prevInnings${num}Commentary`);
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (error || !data?.length) {
+            container.innerHTML = '<p class="no-data-cell">No ball data recorded</p>';
+            return;
+        }
+
+        const inningsBalls = data.filter(b => b.innings_number === num);
+        if (!inningsBalls.length) {
+            container.innerHTML = '<p class="no-data-cell">No balls recorded for this innings</p>';
+            return;
+        }
+
+        inningsBalls.forEach(ball => {
+            const item = document.createElement('div');
+            item.className = 'commentary-item';
+            item.innerHTML = `<div class="ball-info">${formatOvers(ball.over_ball)}</div><div class="ball-desc">${ball.description}</div>`;
+            container.appendChild(item);
+        });
+    });
 }
 
 // ========================================
@@ -1281,6 +1314,11 @@ async function showBowlerSelection() {
 
     document.getElementById('bowlerSelection').classList.remove('hidden');
     document.getElementById('batsmenSelection').classList.add('hidden');
+
+    // Render the completed over's deliveries so the scorer can see all 6 balls
+    // while choosing the next bowler. renderThisOver is normally only called from
+    // refreshScoringUI, which is skipped when showBowlerSelection is called directly.
+    renderThisOver(inn);
 }
 
 async function confirmBatsmen() {
@@ -1328,6 +1366,8 @@ async function confirmBowler() {
 
     inn.bowlers  = bowlers;
     inn.bowler   = bid;
+    // Clear the previous over's deliveries now that a new over is beginning
+    inn.thisOver = [];
     innings[idx] = inn;
 
     const { error } = await db.from('matches').update({ innings }).eq('id', match.id);
@@ -1455,6 +1495,10 @@ async function handleWicket(e) {
         closeWicketModal(); return;
     }
 
+    // FIX 2 & 4: Snapshot the state BEFORE any modification so undo correctly
+    // restores to the pre-wicket state (mirrors the same fix in recordBall).
+    lastBalls.push({ innings: JSON.parse(JSON.stringify(match.innings)) });
+
     inn.batsmen = inn.batsmen.map(b => {
         if (b.id === outId) {
             let status = wicketType;
@@ -1516,7 +1560,6 @@ async function handleWicket(e) {
         innings_number: match.current_innings
     });
 
-    lastBalls.push({ innings: JSON.parse(JSON.stringify(innings)) });
     currentScoringMatch = { ...match, innings };
     closeWicketModal();
     refreshScoringUI();
@@ -1554,6 +1597,9 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     const striker = inn.batsmen?.find(b => b.id === inn.striker);
     const bowler  = inn.bowlers?.find(b => b.id === inn.bowler);
     if (!striker || !bowler) { showMessage('Please set batsmen and bowler first.'); return; }
+
+    // FIX 2: Snapshot state BEFORE modification so undo restores to pre-ball state.
+    lastBalls.push({ innings: JSON.parse(JSON.stringify(match.innings)) });
 
     const overBall = (!isExtra || (extraType !== 'wide' && extraType !== 'noball'))
         ? inn.balls + 1 : inn.balls;
@@ -1596,9 +1642,12 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     }
 
     // ── Strike rotation ─────────────────────────────────────────
-    // For no-balls: rotate based on batsman runs only (the penalty run does not rotate strike).
-    // For all other deliveries: rotate based on total runs.
-    const strikeRunsForRotation = (extraType === 'noball') ? batsmanRuns : runs;
+    // Wides:    the 1-run penalty is automatic — the batsman never ran, so
+    //           strike must NEVER rotate regardless of the run value.
+    // No-balls: rotate based on batsman runs only (penalty run does not count).
+    // All other deliveries: rotate based on total runs.
+    const strikeRunsForRotation = (extraType === 'wide')   ? 0 :
+                                  (extraType === 'noball') ? batsmanRuns : runs;
     if (strikeRunsForRotation % 2 === 1) {
         const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
     }
@@ -1637,7 +1686,14 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     if (overComplete) {
         const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
         inn.batsmen  = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
-        inn.thisOver = [];
+        // Add the 6th delivery to thisOver so it remains visible during bowler selection.
+        // thisOver is cleared in confirmBowler() when the new over actually begins.
+        inn.thisOver = [...(inn.thisOver || []), {
+            runs,
+            isWicket:    false,
+            extraType:   isExtra ? extraType : null,
+            batsmanRuns: extraType === 'noball' ? batsmanRuns : null
+        }];
         description += ' [End of Over]';
     } else {
         // Store batsmanRuns in the thisOver entry so renderThisOver can show "Nb+4" etc.
@@ -1667,7 +1723,6 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
         innings_number: match.current_innings
     });
 
-    lastBalls.push({ innings: JSON.parse(JSON.stringify(innings)) });
     currentScoringMatch = { ...match, innings };
 
     // ── Target reached in 2nd innings? ──────────────────────────
@@ -1787,7 +1842,7 @@ async function undoLastBall() {
     const { error } = await db.from('matches').update({ innings: last.innings }).eq('id', match.id);
     if (error) { showMessage('Error undoing: ' + error.message); return; }
 
-    // Delete the most recent ball record for this match
+    // Delete the most recent ball record for this match (works for normal, extra, AND wicket balls)
     const { data } = await db
         .from('balls').select('id').eq('match_id', match.id)
         .order('created_at', { ascending: false }).limit(1);
