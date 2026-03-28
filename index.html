@@ -537,7 +537,7 @@
                             </div>
                         </div>
 
-                        <!-- Wicket Modal -->
+                        <!-- ── WICKET MODAL ────────────────────────────── -->
                         <div id="wicketModal" class="modal-overlay hidden">
                             <div class="modal-box">
                                 <h3>Wicket Details</h3>
@@ -576,6 +576,34 @@
                                         <button type="button" id="cancelWicketBtn" class="btn btn-secondary">Cancel</button>
                                     </div>
                                 </form>
+                            </div>
+                        </div>
+
+                        <!-- ── NO BALL RUNS MODAL ──────────────────────── -->
+                        <!--
+                            Shown when the scorer clicks "No Ball".
+                            The 1 penalty run is automatic — the scorer just picks
+                            how many runs the batsman scored off the bat (0–6).
+                            Clicking any run button immediately confirms and closes.
+                        -->
+                        <div id="noBallModal" class="modal-overlay hidden">
+                            <div class="modal-box">
+                                <h3>No Ball — Runs off the Bat?</h3>
+                                <p style="font-size:13px;margin-bottom:18px;opacity:0.75;line-height:1.5;">
+                                    The 1 no-ball penalty is added automatically.<br>
+                                    Select how many runs the batsman scored off this delivery:
+                                </p>
+                                <div class="runs-buttons">
+                                    <button class="run-btn nb-run-btn" type="button" data-nbr="0">0</button>
+                                    <button class="run-btn nb-run-btn" type="button" data-nbr="1">1</button>
+                                    <button class="run-btn nb-run-btn" type="button" data-nbr="2">2</button>
+                                    <button class="run-btn nb-run-btn" type="button" data-nbr="3">3</button>
+                                    <button class="run-btn nb-run-btn" type="button" data-nbr="4">4</button>
+                                    <button class="run-btn nb-run-btn" type="button" data-nbr="6">6</button>
+                                </div>
+                                <div class="modal-buttons" style="margin-top:16px;">
+                                    <button type="button" id="cancelNoBallBtn" class="btn btn-secondary">Cancel</button>
+                                </div>
                             </div>
                         </div>
 

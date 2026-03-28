@@ -97,11 +97,26 @@ function setupEventListeners() {
     document.getElementById('wicketForm').addEventListener('submit', handleWicket);
     document.getElementById('undoBtn').addEventListener('click', undoLastBall);
 
+    // No-ball modal — cancel button
+    document.getElementById('cancelNoBallBtn').addEventListener('click', closeNoBallModal);
+
+    // No-ball modal — each run selection button confirms immediately on click
+    document.querySelectorAll('.nb-run-btn').forEach(btn =>
+        btn.addEventListener('click', function () {
+            confirmNoBall(parseInt(this.getAttribute('data-nbr')));
+        })
+    );
+
     const commentaryBtn = document.getElementById('loadCommentaryBtn');
     if (commentaryBtn) commentaryBtn.addEventListener('click', toggleCommentary);
 
     document.querySelectorAll('.run-btn').forEach(btn =>
         btn.addEventListener('click', function () {
+            // nb-run-btn buttons share the run-btn class for styling but have their
+            // own separate handler (confirmNoBall). Guard here prevents them from
+            // also firing this handler, which would produce NaN and count the
+            // no-ball delivery as a legal ball in the over tally.
+            if (this.classList.contains('nb-run-btn')) return;
             recordBall(parseInt(this.getAttribute('data-runs')), false, null);
         })
     );
@@ -113,6 +128,7 @@ function setupEventListeners() {
     window.addEventListener('click', function (e) {
         if (e.target === document.getElementById('loginModal'))  closeLoginModal();
         if (e.target === document.getElementById('wicketModal')) closeWicketModal();
+        if (e.target === document.getElementById('noBallModal')) closeNoBallModal();
     });
 }
 
@@ -245,11 +261,9 @@ function loadAllData() {
 
 async function loadLiveMatchesOnce() {
     if (!isAdmin) {
-        // Public: re-attach (includes fetch + subscription)
         attachLiveMatchesListener();
         return;
     }
-    // Admin: simple one-time fetch
     _fetchAndRenderLiveMatches();
 }
 
@@ -1031,23 +1045,19 @@ function refreshScoringUI() {
         const nonStriker = inn.batsmen?.find(b => b.id === inn.nonStriker);
         const bowler     = inn.bowlers?.find(b => b.id === inn.bowler);
         document.getElementById('currentStriker').textContent    = striker?.name    || '-';
-        document.getElementById('strikerStats').textContent      = striker    ? `${striker.runs}(${striker.balls})`                          : '0(0)';
+        document.getElementById('strikerStats').textContent      = striker    ? `${striker.runs}(${striker.balls})`                              : '0(0)';
         document.getElementById('currentNonStriker').textContent = nonStriker?.name || '-';
-        document.getElementById('nonStrikerStats').textContent   = nonStriker ? `${nonStriker.runs}(${nonStriker.balls})`                    : '0(0)';
+        document.getElementById('nonStrikerStats').textContent   = nonStriker ? `${nonStriker.runs}(${nonStriker.balls})`                        : '0(0)';
         document.getElementById('currentBowler').textContent     = bowler?.name     || '-';
         document.getElementById('bowlerStats').textContent       = bowler     ? `${bowler.wickets}-${bowler.runs} (${formatOvers(bowler.balls)})` : '0-0 (0.0)';
 
         if (inningsLocked) {
-            // Lock scoring panel
             scoringControls.classList.add('hidden');
-            // Show the correct end button
             if (match.current_innings === 1) endInningsBtn.classList.remove('hidden');
             else                             endMatchBtn.classList.remove('hidden');
-            // Show appropriate status banner
             if (isAllOut) _showAllOutBanner(inn, match);
             else          _showOversCompleteBanner(match);
         } else {
-            // Innings in progress
             scoringControls.classList.remove('hidden');
             endInningsBtn.classList.remove('hidden');
             endMatchBtn.classList.remove('hidden');
@@ -1109,10 +1119,18 @@ function renderThisOver(inn) {
         const span = document.createElement('span');
         span.className = 'over-ball';
         if (ball.isWicket) {
-            span.classList.add('wicket'); span.textContent = 'W';
+            span.classList.add('wicket');
+            span.textContent = 'W';
         } else if (ball.extraType) {
             span.classList.add('extra');
-            span.textContent = ball.extraType === 'wide' ? 'Wd' : ball.extraType === 'noball' ? 'Nb' : ball.runs > 0 ? ball.runs : '0';
+            if (ball.extraType === 'wide') {
+                span.textContent = 'Wd';
+            } else if (ball.extraType === 'noball') {
+                // Show batsman runs alongside the Nb label if any were scored
+                span.textContent = (ball.batsmanRuns > 0) ? `Nb+${ball.batsmanRuns}` : 'Nb';
+            } else {
+                span.textContent = ball.runs > 0 ? ball.runs : '0';
+            }
         } else {
             if (ball.runs === 4) span.classList.add('four');
             if (ball.runs === 6) span.classList.add('six');
@@ -1182,7 +1200,6 @@ async function startInnings() {
         fieldingTeam = match.innings[0].battingTeamId === match.team1.id ? match.team1 : match.team2;
     }
 
-    // Determine maxWickets from actual roster (supports non-11 teams)
     const { data: teamData } = await db.from('teams').select('players').eq('id', battingTeam.id).single();
     const rosterSize = teamData?.players?.length || 11;
     const maxWickets = Math.max(rosterSize - 1, 1);
@@ -1232,7 +1249,7 @@ async function showBatsmenSelection() {
     const available = players.filter(p => !usedIds.includes(p.id));
 
     if (available.length === 0) {
-        strikerSel.innerHTML = '<option value="">No available players</option>';
+        strikerSel.innerHTML    = '<option value="">No available players</option>';
         nonStrikerSel.innerHTML = '<option value="">No available players</option>';
     } else {
         available.forEach(p => {
@@ -1270,7 +1287,7 @@ async function confirmBatsmen() {
     const sv = document.getElementById('strikerSelect').value;
     const nv = document.getElementById('nonStrikerSelect').value;
     if (!sv || !nv) { showMessage('Please select both batsmen.'); return; }
-    if (sv === nv) { showMessage('Please select two different batsmen.'); return; }
+    if (sv === nv)  { showMessage('Please select two different batsmen.'); return; }
 
     const [sid, sname] = sv.split('||');
     const [nid, nname] = nv.split('||');
@@ -1342,6 +1359,21 @@ async function changeStrike() {
 }
 
 function showChangeBowler() { showBowlerSelection(); }
+
+// ========================================
+// NO BALL MODAL
+// ========================================
+function showNoBallModal()  { document.getElementById('noBallModal').classList.remove('hidden'); }
+function closeNoBallModal() { document.getElementById('noBallModal').classList.add('hidden'); }
+
+// Called when the scorer taps a run button inside the no-ball modal.
+// batsmanRuns = runs scored off the bat (0, 1, 2, 3, 4, or 6).
+// The 1 no-ball penalty is always added on top.
+function confirmNoBall(batsmanRuns) {
+    closeNoBallModal();
+    // Total runs credited to the team: 1 (penalty) + batsman runs
+    recordBall(1 + batsmanRuns, true, 'noball', batsmanRuns);
+}
 
 // ========================================
 // WICKET MODAL
@@ -1464,7 +1496,7 @@ async function handleWicket(e) {
 
     innings[idx] = inn;
 
-    const bowlerObj   = inn.bowlers?.find(b => b.id === inn.bowler);
+    const bowlerObj    = inn.bowlers?.find(b => b.id === inn.bowler);
     const allOutSuffix = isAllOut ? ' — ALL OUT!' : '';
     const description  = `${outName} ${wicketType}${fielder ? ' by ' + fielder : ''} — WICKET! b. ${bowlerObj?.name || 'Unknown'}${allOutSuffix}`;
 
@@ -1493,7 +1525,11 @@ async function handleWicket(e) {
 // ========================================
 // RECORD BALL
 // ========================================
-async function recordBall(runs, isExtra, extraType) {
+// batsmanRuns is only used for no-balls:
+//   runs        = total runs added to the team score (1 penalty + batsmanRuns)
+//   batsmanRuns = runs credited to the individual batsman's scorecard
+//   For all other delivery types, batsmanRuns defaults to 0.
+async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     const match = currentScoringMatch;
     if (!match) return;
 
@@ -1501,6 +1537,7 @@ async function recordBall(runs, isExtra, extraType) {
     const innings = [...match.innings];
     const inn     = { ...innings[idx] };
 
+    // ── Guards ──────────────────────────────────────────────────
     if (inn.allOut) {
         showMessage('Team is all out. Click "End Innings" to continue.');
         return;
@@ -1521,44 +1558,100 @@ async function recordBall(runs, isExtra, extraType) {
     const overBall = (!isExtra || (extraType !== 'wide' && extraType !== 'noball'))
         ? inn.balls + 1 : inn.balls;
 
+    // ── Team score ───────────────────────────────────────────────
     inn.runs = (inn.runs || 0) + runs;
 
+    // ── Batsman & ball counts ────────────────────────────────────
     if (!isExtra) {
+        // Normal delivery: all runs go to the batsman
         inn.batsmen = inn.batsmen.map(b => b.id === inn.striker
-            ? { ...b, runs: (b.runs||0)+runs, balls: (b.balls||0)+1, fours: runs===4?(b.fours||0)+1:(b.fours||0), sixes: runs===6?(b.sixes||0)+1:(b.sixes||0) }
+            ? { ...b,
+                runs:  (b.runs||0)  + runs,
+                balls: (b.balls||0) + 1,
+                fours: runs === 4 ? (b.fours||0) + 1 : (b.fours||0),
+                sixes: runs === 6 ? (b.sixes||0) + 1 : (b.sixes||0)
+              }
             : b);
         inn.balls   = (inn.balls || 0) + 1;
-        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler ? { ...b, runs: (b.runs||0)+runs, balls: (b.balls||0)+1 } : b);
+        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler
+            ? { ...b, runs: (b.runs||0) + runs, balls: (b.balls||0) + 1 }
+            : b);
     } else {
-        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler ? { ...b, runs: (b.runs||0)+runs, extras: (b.extras||0)+1 } : b);
+        // Extra delivery: bowler concedes all runs; ball count only increases for bye/legbye
+        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler
+            ? { ...b, runs: (b.runs||0) + runs, extras: (b.extras||0) + 1 }
+            : b);
         if (extraType !== 'wide' && extraType !== 'noball') inn.balls = (inn.balls || 0) + 1;
+
+        // No-ball only: credit batsman runs (NOT the 1 penalty run)
+        if (extraType === 'noball' && batsmanRuns > 0) {
+            inn.batsmen = inn.batsmen.map(b => b.id === inn.striker
+                ? { ...b,
+                    runs:  (b.runs||0)  + batsmanRuns,
+                    fours: batsmanRuns === 4 ? (b.fours||0) + 1 : (b.fours||0),
+                    sixes: batsmanRuns === 6 ? (b.sixes||0) + 1 : (b.sixes||0)
+                  }
+                : b);
+        }
     }
 
-    if (runs % 2 === 1) {
+    // ── Strike rotation ─────────────────────────────────────────
+    // For no-balls: rotate based on batsman runs only (the penalty run does not rotate strike).
+    // For all other deliveries: rotate based on total runs.
+    const strikeRunsForRotation = (extraType === 'noball') ? batsmanRuns : runs;
+    if (strikeRunsForRotation % 2 === 1) {
         const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
     }
     inn.batsmen = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
 
+    // ── Over complete? ───────────────────────────────────────────
+    // No-balls never count toward the over, so overComplete can only be true for !isExtra.
     const overComplete = !isExtra && inn.balls % 6 === 0 && inn.balls > 0;
 
+    // ── Commentary ───────────────────────────────────────────────
     let description = '';
-    if (isExtra)         description = `${extraType.toUpperCase()} + ${runs} runs`;
-    else if (runs === 0) description = `Dot ball. ${striker.name} to ${bowler.name}`;
-    else if (runs === 4) description = `FOUR! ${striker.name} hits ${bowler.name} for 4`;
-    else if (runs === 6) description = `SIX! ${striker.name} hits ${bowler.name} for 6`;
-    else                 description = `${runs} run(s). ${striker.name} off ${bowler.name}`;
+    if (isExtra) {
+        if (extraType === 'noball') {
+            if (batsmanRuns === 0)
+                description = `NO BALL. 1 penalty run. ${striker.name} off ${bowler.name}.`;
+            else if (batsmanRuns === 4)
+                description = `NO BALL + FOUR! ${striker.name} hits ${bowler.name} for 4. Total: ${runs} runs.`;
+            else if (batsmanRuns === 6)
+                description = `NO BALL + SIX! ${striker.name} hits ${bowler.name} for 6. Total: ${runs} runs.`;
+            else
+                description = `NO BALL + ${batsmanRuns} run(s). ${striker.name} off ${bowler.name}. Total: ${runs} runs.`;
+        } else {
+            description = `${extraType.toUpperCase()} + ${runs} runs`;
+        }
+    } else if (runs === 0) {
+        description = `Dot ball. ${striker.name} to ${bowler.name}`;
+    } else if (runs === 4) {
+        description = `FOUR! ${striker.name} hits ${bowler.name} for 4`;
+    } else if (runs === 6) {
+        description = `SIX! ${striker.name} hits ${bowler.name} for 6`;
+    } else {
+        description = `${runs} run(s). ${striker.name} off ${bowler.name}`;
+    }
 
+    // ── End-of-over handling ─────────────────────────────────────
     if (overComplete) {
         const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
         inn.batsmen  = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
         inn.thisOver = [];
         description += ' [End of Over]';
     } else {
-        inn.thisOver = [...(inn.thisOver || []), { runs, isWicket: false, extraType: isExtra ? extraType : null }];
+        // Store batsmanRuns in the thisOver entry so renderThisOver can show "Nb+4" etc.
+        inn.thisOver = [...(inn.thisOver || []), {
+            runs,
+            isWicket:   false,
+            extraType:  isExtra ? extraType : null,
+            batsmanRuns: extraType === 'noball' ? batsmanRuns : null
+        }];
     }
 
     innings[idx] = inn;
 
+    // ── Persist to Supabase ──────────────────────────────────────
     const { error } = await db.from('matches').update({ innings }).eq('id', match.id);
     if (error) { showMessage('Error recording ball: ' + error.message); return; }
 
@@ -1577,6 +1670,7 @@ async function recordBall(runs, isExtra, extraType) {
     lastBalls.push({ innings: JSON.parse(JSON.stringify(innings)) });
     currentScoringMatch = { ...match, innings };
 
+    // ── Target reached in 2nd innings? ──────────────────────────
     const targetReached = match.current_innings === 2 && innings.length >= 2 && inn.runs >= innings[0].runs + 1;
     if (targetReached) {
         const maxW = inn.maxWickets ?? 10;
@@ -1590,7 +1684,18 @@ async function recordBall(runs, isExtra, extraType) {
     else              refreshScoringUI();
 }
 
+// ========================================
+// HANDLE EXTRA (Wide / Bye / Leg Bye)
+// ========================================
+// No-ball is now handled by showNoBallModal() → confirmNoBall().
+// Wide keeps its default 1 run. Bye and leg-bye ask for run count via prompt.
 function handleExtra(extraType) {
+    if (extraType === 'noball') {
+        // Open the no-ball modal so the scorer can specify runs off the bat
+        showNoBallModal();
+        return;
+    }
+
     let runs = 1;
     if (extraType === 'bye' || extraType === 'legbye') {
         const r = prompt(`Enter runs for ${extraType} (0–6):`, '1');
@@ -1682,6 +1787,7 @@ async function undoLastBall() {
     const { error } = await db.from('matches').update({ innings: last.innings }).eq('id', match.id);
     if (error) { showMessage('Error undoing: ' + error.message); return; }
 
+    // Delete the most recent ball record for this match
     const { data } = await db
         .from('balls').select('id').eq('match_id', match.id)
         .order('created_at', { ascending: false }).limit(1);
