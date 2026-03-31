@@ -1,4 +1,4 @@
 # Cricket_Scoreboard1
 Scoreboard for Cricket
 
-This is the Scoreboard Website creted by me Miheer Godbole
+This is the Scoreboard Website created by me Miheer Godbole
