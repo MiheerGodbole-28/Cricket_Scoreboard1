@@ -123,9 +123,9 @@ function setupEventListeners() {
     );
 
     window.addEventListener('click', function (e) {
-        if (e.target === document.getElementById('loginModal'))  closeLoginModal();
-        if (e.target === document.getElementById('wicketModal')) closeWicketModal();
-        if (e.target === document.getElementById('noBallModal')) closeNoBallModal();
+        if (e.target === document.getElementById('loginModal'))    closeLoginModal();
+        if (e.target === document.getElementById('wicketModal'))   closeWicketModal();
+        if (e.target === document.getElementById('noBallModal'))   closeNoBallModal();
     });
 }
 
@@ -1302,6 +1302,57 @@ async function showBatsmenSelection() {
     document.getElementById('scoringControls').classList.add('hidden');
 }
 
+// ========================================
+// END OF OVER — CHANGE BOWLER PROMPT
+// ========================================
+function showEndOfOverPrompt() {
+    const match = currentScoringMatch;
+    const inn   = match.innings[match.current_innings - 1];
+    const bowler = inn.bowlers?.find(b => b.id === inn.bowler);
+    const overNum = Math.floor(inn.balls / 6);
+
+    const modal  = document.getElementById('endOfOverModal');
+    const msgEl  = document.getElementById('endOfOverMsg');
+    const keepBtn = document.getElementById('keepBowlerBtn');
+    const changBtn = document.getElementById('changeBowlerPromptBtn');
+
+    msgEl.textContent = `Over ${overNum} complete! ${bowler ? bowler.name + ' bowled that over.' : ''}`;
+    keepBtn.textContent = `Keep ${bowler ? bowler.name : 'Same Bowler'}`;
+
+    keepBtn.onclick = async () => {
+        modal.classList.add('hidden');
+        // Re-confirm the same bowler so thisOver is cleared and the new over starts
+        if (inn.bowler) {
+            const bv = inn.bowler + '||' + (bowler?.name || '');
+            document.getElementById('bowlerSelect').value = ''; // reset
+            await _reconfirmSameBowler(inn.bowler, bowler?.name || '');
+        }
+    };
+
+    changBtn.onclick = () => {
+        modal.classList.add('hidden');
+        showBowlerSelection();
+    };
+
+    modal.classList.remove('hidden');
+}
+
+async function _reconfirmSameBowler(bid, bname) {
+    const match   = currentScoringMatch;
+    const idx     = match.current_innings - 1;
+    const innings = [...match.innings];
+    const inn     = { ...innings[idx] };
+
+    // Clear thisOver for the new over (same as confirmBowler does)
+    inn.thisOver = [];
+    innings[idx] = inn;
+
+    const { error } = await db.from('matches').update({ innings }).eq('id', match.id);
+    if (error) { showMessage('Error starting new over: ' + error.message); return; }
+    currentScoringMatch = { ...match, innings };
+    refreshScoringUI();
+}
+
 async function showBowlerSelection() {
     const match = currentScoringMatch;
     const inn   = match.innings[match.current_innings - 1];
@@ -1314,6 +1365,8 @@ async function showBowlerSelection() {
 
     document.getElementById('bowlerSelection').classList.remove('hidden');
     document.getElementById('batsmenSelection').classList.add('hidden');
+    // Hide scoring controls so the scorer can't record balls before selecting bowler
+    document.getElementById('scoringControls').classList.add('hidden');
 
     // Render the completed over's deliveries so the scorer can see all 6 balls
     // while choosing the next bowler. renderThisOver is normally only called from
@@ -1428,6 +1481,25 @@ async function showWicketModal() {
     wbs.innerHTML = '<option value="">-- Select --</option>';
     activeBatsmen.forEach(b => wbs.add(new Option(b.name, b.id + '||' + b.name)));
 
+    // Pre-select the striker by default (they're almost always the one out)
+    const strikerId = inn.striker;
+    const strikerBatsman = activeBatsmen.find(b => b.id === strikerId);
+    if (strikerBatsman) wbs.value = strikerId + '||' + strikerBatsman.name;
+
+    // Lock/unlock batsman select based on dismissal type.
+    // For Run Out, the scorer must choose who was run out. For all other types
+    // (Bowled, Caught, LBW, Stumped, Hit Wicket) the striker is always the one out.
+    const wicketTypeEl = document.getElementById('wicketType');
+    function _updateBatsmanLock() {
+        const isRunOut = wicketTypeEl.value === 'Run Out';
+        wbs.disabled = !isRunOut;
+        if (!isRunOut && strikerBatsman) {
+            wbs.value = strikerId + '||' + strikerBatsman.name;
+        }
+    }
+    wicketTypeEl.onchange = _updateBatsmanLock;
+    _updateBatsmanLock(); // apply immediately on open
+
     const fs = document.getElementById('fielderSelect');
     fs.innerHTML = '<option value="">-- Select Fielder --</option>';
     const { data: fTeam } = await db.from('teams').select('players').eq('id', inn.fieldingTeamId).single();
@@ -1465,6 +1537,9 @@ async function showWicketModal() {
 function closeWicketModal() {
     document.getElementById('wicketModal').classList.add('hidden');
     document.getElementById('wicketForm').reset();
+    // Remove the dynamic lock handler to avoid stale closures on next open
+    document.getElementById('wicketType').onchange = null;
+    document.getElementById('wicketBatsmanSelect').disabled = false;
 }
 
 // ========================================
@@ -1538,6 +1613,9 @@ async function handleWicket(e) {
     inn.bowlers  = inn.bowlers.map(b => b.id === inn.bowler ? { ...b, balls: (b.balls||0) + 1 } : b);
     inn.thisOver = [...(inn.thisOver || []), { runs: 0, isWicket: true }];
 
+    // Check if this wicket ball completed an over
+    const wicketOverComplete = inn.balls % 6 === 0 && inn.balls > 0;
+
     innings[idx] = inn;
 
     const bowlerObj    = inn.bowlers?.find(b => b.id === inn.bowler);
@@ -1562,7 +1640,9 @@ async function handleWicket(e) {
 
     currentScoringMatch = { ...match, innings };
     closeWicketModal();
-    refreshScoringUI();
+
+    if (!isAllOut && wicketOverComplete) showEndOfOverPrompt();
+    else                                 refreshScoringUI();
 }
 
 // ========================================
@@ -1735,7 +1815,7 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
         return;
     }
 
-    if (overComplete) showBowlerSelection();
+    if (overComplete) showEndOfOverPrompt();
     else              refreshScoringUI();
 }
 
