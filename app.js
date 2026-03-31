@@ -15,6 +15,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser           = null;
 let isAdmin               = false;
 let currentMatchId        = null;
+let openPrevMatchId       = null;   // tracks which previous-match card is expanded
 let currentScoringMatch   = null;
 let lastBalls             = [];   // undo stack
 
@@ -499,6 +500,14 @@ async function loadMatchesManagement() {
 // ========================================
 function renderLiveMatchesList(matches) {
     const container = document.getElementById('liveMatchesList');
+    const details   = document.getElementById('matchDetails');
+
+    // If the details panel is currently sitting inside the grid (inline open),
+    // lift it out before we wipe innerHTML so we don't lose it from the DOM.
+    if (container.contains(details)) {
+        container.parentNode.appendChild(details);
+    }
+
     container.innerHTML = '';
 
     if (!matches.length) {
@@ -509,7 +518,14 @@ function renderLiveMatchesList(matches) {
     matches.forEach(m => {
         const card = document.createElement('div');
         card.className = `match-card ${m.status === 'live' ? 'live' : ''}`;
-        card.onclick = () => showMatchDetails(m.id);
+        card.dataset.matchId = m.id;
+
+        // Mark card as open if its details are currently showing
+        if (m.id === currentMatchId && !details.classList.contains('hidden')) {
+            card.classList.add('match-card--open');
+        }
+
+        card.onclick = () => _toggleLiveDetails(m.id, card);
 
         const badge = m.status === 'live'
             ? '<span class="match-status live">● LIVE</span>'
@@ -539,6 +555,41 @@ function renderLiveMatchesList(matches) {
             <p class="match-venue">${m.venue}</p>`;
         container.appendChild(card);
     });
+
+    // Re-attach the open details panel inline after its card (survives re-render)
+    if (currentMatchId && !details.classList.contains('hidden')) {
+        const openCard = container.querySelector(`[data-match-id="${currentMatchId}"]`);
+        if (openCard) openCard.insertAdjacentElement('afterend', details);
+    }
+}
+
+// ────────────────────────────────────────────────────────────
+// Toggle live match details inline below the clicked card
+// ────────────────────────────────────────────────────────────
+function _toggleLiveDetails(matchId, cardEl) {
+    const details   = document.getElementById('matchDetails');
+    const container = document.getElementById('liveMatchesList');
+
+    // Tapping the already-open card → close it
+    if (currentMatchId === matchId && !details.classList.contains('hidden')) {
+        details.classList.add('hidden');
+        container.parentNode.appendChild(details); // park outside grid
+        if (currentMatchSubscription) { currentMatchSubscription.unsubscribe(); currentMatchSubscription = null; }
+        currentMatchId = null;
+        // Remove open highlight from all cards
+        container.querySelectorAll('.match-card--open').forEach(c => c.classList.remove('match-card--open'));
+        return;
+    }
+
+    // Remove open highlight from whichever card was previously open
+    container.querySelectorAll('.match-card--open').forEach(c => c.classList.remove('match-card--open'));
+    cardEl.classList.add('match-card--open');
+
+    // Move details panel right after the clicked card (inside the grid → full-width span)
+    cardEl.insertAdjacentElement('afterend', details);
+    details.classList.remove('hidden');
+
+    showMatchDetails(matchId);
 }
 
 // ========================================
@@ -613,7 +664,6 @@ function renderMatchDetails(match, matchId) {
     renderPartnership(match);
     loadBattingScorecard(match);
     loadBowlingScorecard(match);
-    document.getElementById('matchDetails').scrollIntoView({ behavior: 'smooth' });
 }
 
 function renderPartnership(match) {
@@ -787,7 +837,14 @@ async function loadPreviousMatches() {
     if (error) { console.error(error); return; }
 
     const list = document.getElementById('previousMatchesList');
+
+    // Lift details panel out of the grid before clearing so we don't lose it
+    const details = document.getElementById('previousMatchDetails');
+    if (list.contains(details)) list.parentNode.appendChild(details);
+
     list.innerHTML = '';
+    openPrevMatchId = null;
+    details.classList.add('hidden');
 
     if (!matches?.length) {
         list.innerHTML = '<p class="no-matches-msg">No completed matches yet</p>';
@@ -797,7 +854,8 @@ async function loadPreviousMatches() {
     matches.forEach(m => {
         const card = document.createElement('div');
         card.className = 'match-card';
-        card.onclick = () => showPreviousMatchDetails(m.id);
+        card.dataset.matchId = m.id;
+        card.onclick = () => _togglePrevDetails(m.id, card);
 
         let t1Score = '-', t2Score = '-';
         if (m.innings?.length > 0) {
@@ -825,6 +883,35 @@ async function loadPreviousMatches() {
     });
 }
 
+// ────────────────────────────────────────────────────────────
+// Toggle previous match details inline below the clicked card
+// ────────────────────────────────────────────────────────────
+function _togglePrevDetails(matchId, cardEl) {
+    const details = document.getElementById('previousMatchDetails');
+    const list    = document.getElementById('previousMatchesList');
+
+    // Tapping the already-open card → close it
+    if (openPrevMatchId === matchId && !details.classList.contains('hidden')) {
+        details.classList.add('hidden');
+        list.parentNode.appendChild(details); // park outside grid
+        openPrevMatchId = null;
+        list.querySelectorAll('.match-card--open').forEach(c => c.classList.remove('match-card--open'));
+        return;
+    }
+
+    // Remove open highlight from previous card
+    list.querySelectorAll('.match-card--open').forEach(c => c.classList.remove('match-card--open'));
+    cardEl.classList.add('match-card--open');
+
+    openPrevMatchId = matchId;
+
+    // Move details panel right after the clicked card (inside grid → full-width span)
+    cardEl.insertAdjacentElement('afterend', details);
+    details.classList.remove('hidden');
+
+    showPreviousMatchDetails(matchId);
+}
+
 async function showPreviousMatchDetails(matchId) {
     const { data: m, error } = await db.from('matches').select('*').eq('id', matchId).single();
     if (error || !m) { showMessage('Match not found'); return; }
@@ -849,7 +936,6 @@ async function showPreviousMatchDetails(matchId) {
         // FIX 3: Load ball-by-ball commentary per innings from the balls table
         loadPreviousMatchCommentary(matchId);
     }
-    document.getElementById('previousMatchDetails').scrollIntoView({ behavior: 'smooth' });
 }
 
 function loadPreviousInningsScorecard(innings, num) {

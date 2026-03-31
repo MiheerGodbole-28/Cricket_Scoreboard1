@@ -353,6 +353,34 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* Card is currently expanded — give a clear active state */
+.match-card.match-card--open {
+  border-color: var(--green-500);
+  border-bottom-color: transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: var(--shadow-md);
+}
+
+.match-card.match-card--open::before {
+  background: var(--green-600);
+}
+
+/* ── Inline details panel (inside grid, full-width) ─────── */
+/* When .match-details or its previous-match equivalent is   */
+/* moved inside a .matches-grid it must span all columns.    */
+.matches-grid > .match-details,
+.matches-grid > #previousMatchDetails {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: none;
+  border-color: var(--green-500);
+  box-shadow: var(--shadow-md);
+  animation: fadeUp 0.22s ease;
+}
+
 .match-card h4 {
   font-family: var(--font-display);
   font-size: 15px;
@@ -444,6 +472,11 @@ body {
 .match-details {
   margin-top: 32px;
   animation: fadeUp 0.28s ease;
+}
+
+/* No top gap when details are inline below a card */
+.matches-grid > .match-details {
+  margin-top: 0;
 }
 
 .match-header {
