@@ -284,13 +284,13 @@
                             </table>
                         </div>
                         <!-- FIX 3: Innings 1 ball-by-ball commentary -->
-                        <div class="ball-by-ball" style="margin-top:16px;">
+                        <div class="ball-by-ball prev-innings-bbb">
                             <h4>Innings 1 — Ball by Ball</h4>
                             <div id="prevInnings1Commentary" class="commentary-list"></div>
                         </div>
 
                         <!-- ── INNINGS 2 ── -->
-                        <div class="batting-scorecard" style="margin-top:24px;">
+                        <div class="batting-scorecard prev-innings2-section">
                             <h4>Innings 2 Batting</h4>
                             <table class="scorecard-table">
                                 <thead>
@@ -310,7 +310,7 @@
                             </table>
                         </div>
                         <!-- FIX 3: Innings 2 ball-by-ball commentary -->
-                        <div class="ball-by-ball" style="margin-top:16px;">
+                        <div class="ball-by-ball prev-innings-bbb">
                             <h4>Innings 2 — Ball by Ball</h4>
                             <div id="prevInnings2Commentary" class="commentary-list"></div>
                         </div>
@@ -600,7 +600,7 @@
                     <div id="noBallModal" class="modal-overlay hidden">
                         <div class="modal-box">
                             <h3>No Ball — Runs off the Bat?</h3>
-                            <p style="font-size:13px;margin-bottom:18px;opacity:0.75;line-height:1.5;">
+                            <p class="noball-desc">
                                 The 1 no-ball penalty is added automatically.<br>
                                 Select how many runs the batsman scored off this delivery:
                             </p>
@@ -612,7 +612,7 @@
                                 <button class="run-btn nb-run-btn" type="button" data-nbr="4">4</button>
                                 <button class="run-btn nb-run-btn" type="button" data-nbr="6">6</button>
                             </div>
-                            <div class="modal-buttons" style="margin-top:16px;">
+                            <div class="modal-buttons modal-buttons--spaced">
                                 <button type="button" id="cancelNoBallBtn" class="btn btn-secondary">Cancel</button>
                             </div>
                         </div>

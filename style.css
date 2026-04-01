@@ -650,7 +650,7 @@ body {
    SCORECARDS
 ═══════════════════════════════════════════════════════════════ */
 .batting-scorecard,
-.bowling-scorecard { margin-bottom: 24px; }
+.bowling-scorecard { margin-bottom: 24px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .batting-scorecard h4,
 .bowling-scorecard h4 {
@@ -666,6 +666,7 @@ body {
 
 .scorecard-table {
   width: 100%;
+  min-width: 440px;
   border-collapse: collapse;
   font-size: 13px;
   background: var(--white);
@@ -727,12 +728,15 @@ body {
   background: var(--white);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   box-shadow: var(--shadow-md);
+  -webkit-overflow-scrolling: touch;
 }
 
 .points-table {
   width: 100%;
+  min-width: 480px;
   border-collapse: collapse;
   font-size: 14px;
 }
@@ -1911,6 +1915,22 @@ body {
 }
 
 .end-of-over-btns { flex-direction: column; gap: 10px; }
+
+/* ── Inline-style replacements ──────────────────────────────── */
+/* Previous match innings sections */
+.prev-innings-bbb       { margin-top: 16px; }
+.prev-innings2-section  { margin-top: 24px; }
+
+/* No Ball modal description text */
+.noball-desc {
+  font-size: 13px;
+  margin-bottom: 18px;
+  opacity: 0.75;
+  line-height: 1.5;
+}
+
+/* Modal buttons with extra top spacing */
+.modal-buttons--spaced { margin-top: 16px; }
 
 @media (min-width: 400px) {
   .end-of-over-btns { flex-direction: row; }

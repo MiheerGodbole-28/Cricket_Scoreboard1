@@ -1447,7 +1447,20 @@ async function showBowlerSelection() {
 
     const bowlerSel = document.getElementById('bowlerSelect');
     bowlerSel.innerHTML = '<option value="">-- Select Bowler --</option>';
-    players.forEach(p => bowlerSel.add(new Option(p.name, p.id + '||' + p.name)));
+    players.forEach(p => {
+        const record = (inn.bowlers || []).find(b => b.id === String(p.id));
+        let label = p.name;
+        if (record && record.balls > 0) {
+            const completedOvers = Math.floor(record.balls / 6);
+            if (completedOvers > 0) {
+                label += ` — ${completedOvers} over${completedOvers > 1 ? 's' : ''} completed`;
+            } else {
+                const b = record.balls;
+                label += ` — ${b} ball${b !== 1 ? 's' : ''} bowled`;
+            }
+        }
+        bowlerSel.add(new Option(label, p.id + '||' + p.name));
+    });
 
     document.getElementById('bowlerSelection').classList.remove('hidden');
     document.getElementById('batsmenSelection').classList.add('hidden');
