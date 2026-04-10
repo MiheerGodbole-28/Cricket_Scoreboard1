@@ -1105,21 +1105,40 @@ async function loadStats() {
     const { data: matches } = await db.from('matches').select('*').eq('status', 'completed');
 
     // Build two separate stat buckets
-    const menStats    = {};
-    const womenStats  = {};
+    const menStats   = {};
+    const womenStats = {};
+
+    // Separate catch buckets keyed by "playerName||teamName"
+    const menCatches   = {};
+    const womenCatches = {};
 
     (matches || []).forEach(m => {
         if (!m.innings) return;
-        // A match is women's if either team name ends with (Women's)
         const isWomens = isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name);
-        const bucket   = isWomens ? womenStats : menStats;
+        const bucket        = isWomens ? womenStats   : menStats;
+        const catchBucket   = isWomens ? womenCatches : menCatches;
 
         m.innings.forEach(inn => {
+            // ── Batting stats ──────────────────────────────────────
             inn.batsmen?.forEach(b => {
                 const k = b.name + '||' + inn.battingTeamName;
                 if (!bucket[k]) bucket[k] = { name: b.name, team: inn.battingTeamName, runs: 0, wickets: 0, wBalls: 0, wRuns: 0, motmCount: 0 };
                 bucket[k].runs += b.runs || 0;
+
+                // ── Catch extraction from batsman status ──────────
+                // Status is stored as "Caught (FielderName)" for caught dismissals.
+                // The fielder belongs to the FIELDING team of this innings.
+                if (b.status && b.status.startsWith('Caught (') && b.status.endsWith(')')) {
+                    const fielderName = b.status.slice(8, -1).trim(); // strip "Caught (" and ")"
+                    if (fielderName) {
+                        const ck = fielderName + '||' + inn.fieldingTeamName;
+                        if (!catchBucket[ck]) catchBucket[ck] = { name: fielderName, team: inn.fieldingTeamName, catches: 0 };
+                        catchBucket[ck].catches++;
+                    }
+                }
             });
+
+            // ── Bowling stats ──────────────────────────────────────
             inn.bowlers?.forEach(b => {
                 const k = b.name + '||' + inn.fieldingTeamName;
                 if (!bucket[k]) bucket[k] = { name: b.name, team: inn.fieldingTeamName, runs: 0, wickets: 0, wBalls: 0, wRuns: 0, motmCount: 0 };
@@ -1128,6 +1147,7 @@ async function loadStats() {
                 bucket[k].wRuns   += b.runs    || 0;
             });
         });
+
         if (m.man_of_the_match) {
             Object.keys(bucket).forEach(k => {
                 if (bucket[k].name === m.man_of_the_match.name) bucket[k].motmCount++;
@@ -1135,29 +1155,58 @@ async function loadStats() {
         }
     });
 
-    function renderStats(suffix, bucket) {
+    function renderStats(suffix, bucket, catchBucket) {
         const all = Object.values(bucket);
 
+        // Batting rankings
         const battingBody = document.getElementById('battingRankingsBody' + suffix);
         if (battingBody) {
             battingBody.innerHTML = '';
-            [...all].sort((a, b) => b.runs - a.runs).slice(0, 10).forEach((p, i) => {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.runs}</strong></td>`;
-                battingBody.appendChild(row);
-            });
+            const sorted = [...all].sort((a, b) => b.runs - a.runs).slice(0, 10);
+            if (!sorted.length) {
+                battingBody.innerHTML = '<tr><td colspan="4" class="no-data-cell">No data yet</td></tr>';
+            } else {
+                sorted.forEach((p, i) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.runs}</strong></td>`;
+                    battingBody.appendChild(row);
+                });
+            }
         }
 
+        // Bowling rankings
         const bowlingBody = document.getElementById('bowlingRankingsBody' + suffix);
         if (bowlingBody) {
             bowlingBody.innerHTML = '';
-            [...all].sort((a, b) => b.wickets !== a.wickets ? b.wickets - a.wickets : (a.wRuns/(a.wBalls||1)) - (b.wRuns/(b.wBalls||1))).slice(0, 10).forEach((p, i) => {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.wickets}</strong></td>`;
-                bowlingBody.appendChild(row);
-            });
+            const sorted = [...all].sort((a, b) => b.wickets !== a.wickets ? b.wickets - a.wickets : (a.wRuns/(a.wBalls||1)) - (b.wRuns/(b.wBalls||1))).slice(0, 10);
+            if (!sorted.length) {
+                bowlingBody.innerHTML = '<tr><td colspan="4" class="no-data-cell">No data yet</td></tr>';
+            } else {
+                sorted.forEach((p, i) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.wickets}</strong></td>`;
+                    bowlingBody.appendChild(row);
+                });
+            }
         }
 
+        // Fielding rankings (catches)
+        const fieldingBody = document.getElementById('fieldingRankingsBody' + suffix);
+        if (fieldingBody) {
+            fieldingBody.innerHTML = '';
+            const catchers = Object.values(catchBucket).sort((a, b) => b.catches - a.catches).slice(0, 10);
+            if (!catchers.length) {
+                fieldingBody.innerHTML = '<tr><td colspan="4" class="no-data-cell">No catches recorded yet</td></tr>';
+            } else {
+                catchers.forEach((p, i) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.catches}</strong></td>`;
+                    fieldingBody.appendChild(row);
+                });
+            }
+        }
+
+        // MVP
         const mvp = [...all].sort((a, b) => b.motmCount !== a.motmCount ? b.motmCount - a.motmCount : b.runs - a.runs)[0];
         const mvpNameEl   = document.getElementById('mvpName'   + suffix);
         const mvpPointsEl = document.getElementById('mvpPoints' + suffix);
@@ -1165,8 +1214,8 @@ async function loadStats() {
         if (mvpPointsEl) mvpPointsEl.textContent = mvp ? `${mvp.motmCount} MOTM award${mvp.motmCount !== 1 ? 's' : ''} · ${mvp.runs} runs · ${mvp.wickets} wickets` : '';
     }
 
-    renderStats('Men',   menStats);
-    renderStats('Women', womenStats);
+    renderStats('Men',   menStats,   menCatches);
+    renderStats('Women', womenStats, womenCatches);
 }
 
 // ========================================
