@@ -598,13 +598,18 @@ function renderLiveMatchesList(matches) {
             ? '<span class="match-status live">● LIVE</span>'
             : '<span class="match-status upcoming">UPCOMING</span>';
 
+        let t1Label = m.team1.shortName, t2Label = m.team2.shortName;
         let t1Score = '-', t2Score = '-';
         if (m.innings?.length > 0) {
             const i1 = m.innings[0];
             t1Score = `${i1.runs}/${i1.wickets} (${formatOvers(i1.balls)})`;
+            t1Label = i1.battingTeamId === m.team1.id ? m.team1.shortName : m.team2.shortName;
             if (m.innings.length > 1) {
                 const i2 = m.innings[1];
                 t2Score = `${i2.runs}/${i2.wickets} (${formatOvers(i2.balls)})`;
+                t2Label = i2.battingTeamId === m.team1.id ? m.team1.shortName : m.team2.shortName;
+            } else {
+                t2Label = t1Label === m.team1.shortName ? m.team2.shortName : m.team1.shortName;
             }
         }
 
@@ -612,11 +617,11 @@ function renderLiveMatchesList(matches) {
             ${badge}
             <h4>${m.team1.name} vs ${m.team2.name}</h4>
             <div class="team-row">
-                <span class="team-name">${m.team1.shortName}</span>
+                <span class="team-name">${t1Label}</span>
                 <span class="team-score">${t1Score}</span>
             </div>
             <div class="team-row">
-                <span class="team-name">${m.team2.shortName}</span>
+                <span class="team-name">${t2Label}</span>
                 <span class="team-score">${t2Score}</span>
             </div>
             <p class="match-venue">${m.venue}</p>`;
@@ -862,16 +867,26 @@ async function loadPointsTable() {
 
         pts[t1].played++; pts[t2].played++;
 
+        const allOvers = (m.total_overs || 0) * 6;
+
+        // ICC NRR rule: if a team is all out, their batting overs denominator
+        // uses the FULL allocated overs — not the actual balls they faced.
+        // The fielding team's "overs bowled" always uses actual balls (opponent's actual balls faced).
+        const i1BallsFor     = (i1.allOut && allOvers > 0) ? allOvers : (i1.balls || 0);
+        const i2BallsFor     = (i2.allOut && allOvers > 0) ? allOvers : (i2.balls || 0);
+        const i1BallsAgainst = i1.balls || 0;  // actual balls opponent faced — never inflated
+        const i2BallsAgainst = i2.balls || 0;
+
         if (i1.battingTeamId === t1) {
-            pts[t1].totalRunsScored   += i1.runs;  pts[t1].totalBallsFaced   += i1.balls;
-            pts[t1].totalRunsConceded += i2.runs;  pts[t1].totalBallsBowled  += i2.balls;
-            pts[t2].totalRunsScored   += i2.runs;  pts[t2].totalBallsFaced   += i2.balls;
-            pts[t2].totalRunsConceded += i1.runs;  pts[t2].totalBallsBowled  += i1.balls;
+            pts[t1].totalRunsScored   += i1.runs;  pts[t1].totalBallsFaced   += i1BallsFor;
+            pts[t1].totalRunsConceded += i2.runs;  pts[t1].totalBallsBowled  += i2BallsAgainst;
+            pts[t2].totalRunsScored   += i2.runs;  pts[t2].totalBallsFaced   += i2BallsFor;
+            pts[t2].totalRunsConceded += i1.runs;  pts[t2].totalBallsBowled  += i1BallsAgainst;
         } else {
-            pts[t2].totalRunsScored   += i1.runs;  pts[t2].totalBallsFaced   += i1.balls;
-            pts[t2].totalRunsConceded += i2.runs;  pts[t2].totalBallsBowled  += i2.balls;
-            pts[t1].totalRunsScored   += i2.runs;  pts[t1].totalBallsFaced   += i2.balls;
-            pts[t1].totalRunsConceded += i1.runs;  pts[t1].totalBallsBowled  += i1.balls;
+            pts[t2].totalRunsScored   += i1.runs;  pts[t2].totalBallsFaced   += i1BallsFor;
+            pts[t2].totalRunsConceded += i2.runs;  pts[t2].totalBallsBowled  += i2BallsAgainst;
+            pts[t1].totalRunsScored   += i2.runs;  pts[t1].totalBallsFaced   += i2BallsFor;
+            pts[t1].totalRunsConceded += i1.runs;  pts[t1].totalBallsBowled  += i1BallsAgainst;
         }
 
         if (m.result) {
@@ -956,13 +971,18 @@ function _renderPreviousCards(matches) {
         card.dataset.matchId = m.id;
         card.onclick = () => _togglePrevDetails(m.id, card);
 
+        let t1Label = m.team1.shortName, t2Label = m.team2.shortName;
         let t1Score = '-', t2Score = '-';
         if (m.innings?.length > 0) {
             const i1 = m.innings[0];
             t1Score = `${i1.runs}/${i1.wickets} (${formatOvers(i1.balls)})`;
+            t1Label = i1.battingTeamId === m.team1.id ? m.team1.shortName : m.team2.shortName;
             if (m.innings.length > 1) {
                 const i2 = m.innings[1];
                 t2Score = `${i2.runs}/${i2.wickets} (${formatOvers(i2.balls)})`;
+                t2Label = i2.battingTeamId === m.team1.id ? m.team1.shortName : m.team2.shortName;
+            } else {
+                t2Label = t1Label === m.team1.shortName ? m.team2.shortName : m.team1.shortName;
             }
         }
 
@@ -970,11 +990,11 @@ function _renderPreviousCards(matches) {
             <span class="match-status completed">COMPLETED</span>
             <h4>${m.team1.name} vs ${m.team2.name}</h4>
             <div class="team-row">
-                <span class="team-name">${m.team1.shortName}</span>
+                <span class="team-name">${t1Label}</span>
                 <span class="team-score">${t1Score}</span>
             </div>
             <div class="team-row">
-                <span class="team-name">${m.team2.shortName}</span>
+                <span class="team-name">${t2Label}</span>
                 <span class="team-score">${t2Score}</span>
             </div>
             <p class="match-result-text">${m.result||'Result pending'}</p>`;
@@ -2029,8 +2049,13 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
 
     // ── End-of-over handling ─────────────────────────────────────
     if (overComplete) {
-        const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
-        inn.batsmen  = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
+        // In cricket, at end of over the non-striker faces the next over.
+        // The run-based rotation above already swapped if odd runs were scored.
+        // So we only need to swap HERE if even runs were scored (striker unchanged).
+        if (strikeRunsForRotation % 2 === 0) {
+            const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
+            inn.batsmen = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
+        }
         // Add the 6th delivery to thisOver so it remains visible during bowler selection.
         // thisOver is cleared in confirmBowler() when the new over actually begins.
         inn.thisOver = [...(inn.thisOver || []), {
@@ -2197,3 +2222,5 @@ async function undoLastBall() {
     refreshScoringUI();
     showMessage('Last ball undone.');
 }
+
+document.getElementById("refresh-btn").addEventListener("click", loadAll);
