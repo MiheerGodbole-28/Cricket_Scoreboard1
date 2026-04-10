@@ -19,6 +19,16 @@ let openPrevMatchId       = null;   // tracks which previous-match card is expan
 let currentScoringMatch   = null;
 let lastBalls             = [];   // undo stack
 
+// Gender filter state — 'men' or 'women'
+let _liveGender  = 'men';
+let _prevGender  = 'men';
+let _teamsGender = 'men';
+
+// Cached match lists for gender re-filtering without re-fetching
+let _allLiveMatches = [];
+let _allPrevMatches = [];
+let _allTeams       = [];
+
 // Supabase realtime subscription references
 let liveMatchesSubscription  = null;
 let currentMatchSubscription = null;
@@ -147,21 +157,29 @@ function toggleMobileMenu() {
 // GENDER TAB SWITCHING
 // ========================================
 function switchGenderTab(btn) {
-    const section = btn.getAttribute('data-section'); // 'points' or 'stats'
-    const gender  = btn.getAttribute('data-gender');  // 'men' or 'women'
+    const section = btn.getAttribute('data-section'); // 'live' | 'previous' | 'points' | 'stats'
+    const gender  = btn.getAttribute('data-gender');  // 'men' | 'women'
 
-    // Update active button — only within the same section
+    // Update active button — only within the same gender-tabs bar
     const parentTabs = btn.closest('.gender-tabs');
     parentTabs.querySelectorAll('.gender-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 
-    // Show/hide the corresponding sections
     if (section === 'points') {
         document.getElementById('pointsMenSection').classList.toggle('hidden',   gender !== 'men');
         document.getElementById('pointsWomenSection').classList.toggle('hidden', gender !== 'women');
     } else if (section === 'stats') {
         document.getElementById('statsMenSection').classList.toggle('hidden',   gender !== 'men');
         document.getElementById('statsWomenSection').classList.toggle('hidden', gender !== 'women');
+    } else if (section === 'live') {
+        _liveGender = gender;
+        renderLiveMatchesList(_allLiveMatches);
+    } else if (section === 'previous') {
+        _prevGender = gender;
+        _renderPreviousCards(_allPrevMatches);
+    } else if (section === 'viewteams') {
+        _teamsGender = gender;
+        _renderPublicTeams(_allTeams);
     }
 }
 
@@ -308,7 +326,7 @@ async function _fetchAndRenderLiveMatches() {
 function formatDate(dateStr) {
     if (!dateStr) return '';
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-GB') + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function calculateStrikeRate(runs, balls) {
@@ -419,22 +437,34 @@ async function loadTeamsManagement() {
 // PUBLIC TEAMS VIEW
 // ========================================
 async function loadPublicTeams() {
+    const { data: teams, error } = await db.from('teams').select('*').order('name');
     const publicTeamsList = document.getElementById('publicTeamsList');
     if (!publicTeamsList) return;
-    publicTeamsList.innerHTML = '';
 
-    const { data: teams, error } = await db.from('teams').select('*').order('name');
     if (error) {
         publicTeamsList.innerHTML = `<div class="no-teams-message"><h3>❌ Error Loading Teams</h3><p>${error.message}</p></div>`;
         return;
     }
 
-    if (!teams || teams.length === 0) {
-        publicTeamsList.innerHTML = `<div class="no-teams-message"><h3>⚠️ No Teams Yet</h3><p>Teams will appear here once they are created.</p></div>`;
+    _allTeams = teams || [];
+    _renderPublicTeams(_allTeams);
+}
+
+function _renderPublicTeams(teams) {
+    const publicTeamsList = document.getElementById('publicTeamsList');
+    if (!publicTeamsList) return;
+    publicTeamsList.innerHTML = '';
+
+    const filtered = teams.filter(t =>
+        _teamsGender === 'women' ? isWomensTeam(t.name) : !isWomensTeam(t.name)
+    );
+
+    if (!filtered.length) {
+        publicTeamsList.innerHTML = `<div class="no-teams-message"><h3>⚠️ No ${_teamsGender === 'women' ? "Women's" : "Men's"} Teams Yet</h3><p>Teams will appear here once they are created.</p></div>`;
         return;
     }
 
-    teams.forEach(team => {
+    filtered.forEach(team => {
         const card = document.createElement('div');
         card.className = 'public-team-card';
 
@@ -447,7 +477,7 @@ async function loadPublicTeams() {
 
         card.innerHTML = `
             <div class="public-team-header">
-                <div class="public-team-name">${team.name}</div>
+                <div class="public-team-name">${displayTeamName(team.name)}</div>
                 <div class="public-team-short">${team.short_name}</div>
             </div>
             <div class="public-players-section">
@@ -526,6 +556,16 @@ async function loadMatchesManagement() {
 // LIVE MATCHES LIST
 // ========================================
 function renderLiveMatchesList(matches) {
+    // Cache the full unfiltered list so gender switching doesn't need a re-fetch
+    _allLiveMatches = matches;
+
+    // Filter by active gender tab
+    const filtered = matches.filter(m =>
+        _liveGender === 'women'
+            ? isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name)
+            : !isWomensTeam(m.team1?.name) && !isWomensTeam(m.team2?.name)
+    );
+
     const container = document.getElementById('liveMatchesList');
     const details   = document.getElementById('matchDetails');
 
@@ -537,12 +577,12 @@ function renderLiveMatchesList(matches) {
 
     container.innerHTML = '';
 
-    if (!matches.length) {
-        container.innerHTML = '<p class="no-matches-msg">No live or upcoming matches</p>';
+    if (!filtered.length) {
+        container.innerHTML = `<p class="no-matches-msg">No ${_liveGender === 'women' ? "women's" : "men's"} live or upcoming matches</p>`;
         return;
     }
 
-    matches.forEach(m => {
+    filtered.forEach(m => {
         const card = document.createElement('div');
         card.className = `match-card ${m.status === 'live' ? 'live' : ''}`;
         card.dataset.matchId = m.id;
@@ -883,6 +923,11 @@ async function loadPreviousMatches() {
         .order('completed_at', { ascending: false });
     if (error) { console.error(error); return; }
 
+    _allPrevMatches = matches || [];
+    _renderPreviousCards(_allPrevMatches);
+}
+
+function _renderPreviousCards(matches) {
     const list = document.getElementById('previousMatchesList');
 
     // Lift details panel out of the grid before clearing so we don't lose it
@@ -893,12 +938,19 @@ async function loadPreviousMatches() {
     openPrevMatchId = null;
     details.classList.add('hidden');
 
-    if (!matches?.length) {
-        list.innerHTML = '<p class="no-matches-msg">No completed matches yet</p>';
+    // Filter by active gender tab
+    const filtered = matches.filter(m =>
+        _prevGender === 'women'
+            ? isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name)
+            : !isWomensTeam(m.team1?.name) && !isWomensTeam(m.team2?.name)
+    );
+
+    if (!filtered.length) {
+        list.innerHTML = `<p class="no-matches-msg">No ${_prevGender === 'women' ? "women's" : "men's"} completed matches yet</p>`;
         return;
     }
 
-    matches.forEach(m => {
+    filtered.forEach(m => {
         const card = document.createElement('div');
         card.className = 'match-card';
         card.dataset.matchId = m.id;

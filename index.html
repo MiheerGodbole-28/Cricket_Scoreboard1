@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-IN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -66,6 +66,10 @@
         <section id="liveTab" class="tab-content active">
             <div class="container">
                 <h2 class="section-title">Live Matches</h2>
+                <div class="gender-tabs">
+                    <button class="gender-tab active" data-gender="men" data-section="live" type="button">🏏 Men's</button>
+                    <button class="gender-tab" data-gender="women" data-section="live" type="button">🏏 Women's</button>
+                </div>
                 <div id="liveMatchesList" class="matches-grid"></div>
 
                 <div id="matchDetails" class="match-details hidden">
@@ -254,6 +258,10 @@
         <section id="previousTab" class="tab-content">
             <div class="container">
                 <h2 class="section-title">Previous Matches</h2>
+                <div class="gender-tabs">
+                    <button class="gender-tab active" data-gender="men" data-section="previous" type="button">🏏 Men's</button>
+                    <button class="gender-tab" data-gender="women" data-section="previous" type="button">🏏 Women's</button>
+                </div>
                 <div id="previousMatchesList" class="matches-grid"></div>
 
                 <div id="previousMatchDetails" class="match-details hidden">
@@ -359,6 +367,10 @@
         <section id="viewteamsTab" class="tab-content">
             <div class="container">
                 <h2 class="section-title">Tournament Teams</h2>
+                <div class="gender-tabs">
+                    <button class="gender-tab active" data-gender="men" data-section="viewteams" type="button">🏏 Men's</button>
+                    <button class="gender-tab" data-gender="women" data-section="viewteams" type="button">🏏 Women's</button>
+                </div>
                 <div id="publicTeamsList" class="public-teams-grid"></div>
             </div>
         </section>
