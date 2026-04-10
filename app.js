@@ -2222,5 +2222,3 @@ async function undoLastBall() {
     refreshScoringUI();
     showMessage('Last ball undone.');
 }
-
-document.getElementById("refresh-btn").addEventListener("click", loadAll);
