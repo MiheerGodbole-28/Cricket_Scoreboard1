@@ -148,22 +148,37 @@
         <section id="pointsTab" class="tab-content">
             <div class="container">
                 <h2 class="section-title">Tournament Points Table</h2>
-                <div class="points-table-wrapper">
-                    <table class="points-table">
-                        <thead>
-                            <tr>
-                                <th>Pos</th>
-                                <th>Team</th>
-                                <th>P</th>
-                                <th>W</th>
-                                <th>L</th>
-                                <th>T</th>
-                                <th>NRR</th>
-                                <th>Pts</th>
-                            </tr>
-                        </thead>
-                        <tbody id="pointsTableBody"></tbody>
-                    </table>
+                <div class="gender-tabs">
+                    <button class="gender-tab active" data-gender="men" data-section="points" type="button">🏏 Men's</button>
+                    <button class="gender-tab" data-gender="women" data-section="points" type="button">🏏 Women's</button>
+                </div>
+
+                <!-- Men's Points Table -->
+                <div id="pointsMenSection" class="gender-section">
+                    <div class="points-table-wrapper">
+                        <table class="points-table">
+                            <thead>
+                                <tr>
+                                    <th>Pos</th><th>Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>NRR</th><th>Pts</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pointsTableBodyMen"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Women's Points Table -->
+                <div id="pointsWomenSection" class="gender-section hidden">
+                    <div class="points-table-wrapper">
+                        <table class="points-table">
+                            <thead>
+                                <tr>
+                                    <th>Pos</th><th>Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>NRR</th><th>Pts</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pointsTableBodyWomen"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </section>
@@ -173,44 +188,65 @@
             <div class="container">
                 <h2 class="section-title">Stats &amp; Rankings</h2>
 
-                <div class="mvp-section">
-                    <h3>⭐ Tournament MVP</h3>
-                    <div class="mvp-card">
-                        <div id="mvpName" class="mvp-name">No data yet</div>
-                        <div id="mvpPoints" class="mvp-points"></div>
+                <div class="gender-tabs">
+                    <button class="gender-tab active" data-gender="men" data-section="stats" type="button">🏏 Men's</button>
+                    <button class="gender-tab" data-gender="women" data-section="stats" type="button">🏏 Women's</button>
+                </div>
+
+                <!-- Men's Stats -->
+                <div id="statsMenSection" class="gender-section">
+                    <div class="mvp-section">
+                        <h3>⭐ Tournament MVP</h3>
+                        <div class="mvp-card">
+                            <div id="mvpNameMen" class="mvp-name">No data yet</div>
+                            <div id="mvpPointsMen" class="mvp-points"></div>
+                        </div>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stats-box">
+                            <h3>🏏 Best Batsmen (Most Runs)</h3>
+                            <table class="stats-table">
+                                <thead><tr><th>Rank</th><th>Player</th><th>Team</th><th>Runs</th></tr></thead>
+                                <tbody id="battingRankingsBodyMen"></tbody>
+                            </table>
+                        </div>
+                        <div class="stats-box">
+                            <h3>🟣 Best Bowlers (Most Wickets)</h3>
+                            <table class="stats-table">
+                                <thead><tr><th>Rank</th><th>Player</th><th>Team</th><th>Wickets</th></tr></thead>
+                                <tbody id="bowlingRankingsBodyMen"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
-                <div class="stats-grid">
-                    <div class="stats-box">
-                        <h3>🏏 Best Batsmen (Most Runs)</h3>
-                        <table class="stats-table">
-                            <thead>
-                                <tr>
-                                    <th>Rank</th>
-                                    <th>Player</th>
-                                    <th>Team</th>
-                                    <th>Runs</th>
-                                </tr>
-                            </thead>
-                            <tbody id="battingRankingsBody"></tbody>
-                        </table>
+                <!-- Women's Stats -->
+                <div id="statsWomenSection" class="gender-section hidden">
+                    <div class="mvp-section">
+                        <h3>⭐ Tournament MVP</h3>
+                        <div class="mvp-card">
+                            <div id="mvpNameWomen" class="mvp-name">No data yet</div>
+                            <div id="mvpPointsWomen" class="mvp-points"></div>
+                        </div>
                     </div>
-                    <div class="stats-box">
-                        <h3>🟣 Best Bowler (Most Wickets)</h3>
-                        <table class="stats-table">
-                            <thead>
-                                <tr>
-                                    <th>Rank</th>
-                                    <th>Player</th>
-                                    <th>Team</th>
-                                    <th>Wickets</th>
-                                </tr>
-                            </thead>
-                            <tbody id="bowlingRankingsBody"></tbody>
-                        </table>
+                    <div class="stats-grid">
+                        <div class="stats-box">
+                            <h3>🏏 Best Batsmen (Most Runs)</h3>
+                            <table class="stats-table">
+                                <thead><tr><th>Rank</th><th>Player</th><th>Team</th><th>Runs</th></tr></thead>
+                                <tbody id="battingRankingsBodyWomen"></tbody>
+                            </table>
+                        </div>
+                        <div class="stats-box">
+                            <h3>🟣 Best Bowlers (Most Wickets)</h3>
+                            <table class="stats-table">
+                                <thead><tr><th>Rank</th><th>Player</th><th>Team</th><th>Wickets</th></tr></thead>
+                                <tbody id="bowlingRankingsBodyWomen"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
+
             </div>
         </section>
 

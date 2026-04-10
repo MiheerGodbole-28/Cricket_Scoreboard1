@@ -2020,3 +2020,46 @@ body {
   .container { padding: 0 16px; }
   .header .container { padding: 0 16px; }
 }
+
+.btn-ghost   { background: var(--white); border: 1px solid var(--border); color: var(--ink2); }
+
+/* ── Gender Sub-Tabs (Men's / Women's) ─────────────────────── */
+.gender-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 24px 0;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0;
+}
+
+.gender-tab {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 10px 22px;
+  border: none;
+  background: transparent;
+  color: var(--gray-500);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+
+.gender-tab:hover {
+  color: var(--green-500);
+  background: var(--green-50);
+}
+
+.gender-tab.active {
+  color: var(--green-700);
+  border-bottom-color: var(--gold-400);
+  background: transparent;
+}
+
+.gender-section {
+  font-family: quicksand;
+ }

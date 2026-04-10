@@ -70,6 +70,11 @@ function setupEventListeners() {
         btn.addEventListener('click', function () { switchTab(this.getAttribute('data-tab')); })
     );
 
+    // Gender sub-tabs (Men's / Women's) for points and stats sections
+    document.querySelectorAll('.gender-tab').forEach(btn =>
+        btn.addEventListener('click', function () { switchGenderTab(this); })
+    );
+
     const mobileToggle = document.getElementById('mobileMenuToggle');
     if (mobileToggle) mobileToggle.addEventListener('click', toggleMobileMenu);
 
@@ -136,6 +141,28 @@ function setupEventListeners() {
 function toggleMobileMenu() {
     document.getElementById('mainNav').classList.toggle('mobile-open');
     document.getElementById('mobileMenuToggle').classList.toggle('active');
+}
+
+// ========================================
+// GENDER TAB SWITCHING
+// ========================================
+function switchGenderTab(btn) {
+    const section = btn.getAttribute('data-section'); // 'points' or 'stats'
+    const gender  = btn.getAttribute('data-gender');  // 'men' or 'women'
+
+    // Update active button — only within the same section
+    const parentTabs = btn.closest('.gender-tabs');
+    parentTabs.querySelectorAll('.gender-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Show/hide the corresponding sections
+    if (section === 'points') {
+        document.getElementById('pointsMenSection').classList.toggle('hidden',   gender !== 'men');
+        document.getElementById('pointsWomenSection').classList.toggle('hidden', gender !== 'women');
+    } else if (section === 'stats') {
+        document.getElementById('statsMenSection').classList.toggle('hidden',   gender !== 'men');
+        document.getElementById('statsWomenSection').classList.toggle('hidden', gender !== 'women');
+    }
 }
 
 function switchTab(tabName) {
@@ -764,6 +791,15 @@ function loadBowlingScorecard(match) {
 // ========================================
 // POINTS TABLE
 // ========================================
+
+// Helper: is a team name a Women's team?
+function isWomensTeam(name) { return name && name.trim().endsWith("(Women's)"); }
+
+// Strip the "(Women's)" suffix for display inside the table
+function displayTeamName(name) {
+    return name ? name.replace(/\s*\(Women's\)\s*$/, '').trim() : name;
+}
+
 async function loadPointsTable() {
     const { data: teams }   = await db.from('teams').select('*');
     const { data: matches } = await db.from('matches').select('*').eq('status', 'completed');
@@ -817,14 +853,25 @@ async function loadPointsTable() {
         }
     });
 
-    const sorted = Object.values(pts).sort((a, b) => b.points - a.points || b.nrr - a.nrr);
-    const body = document.getElementById('pointsTableBody');
-    body.innerHTML = '';
-    sorted.forEach((t, i) => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${i+1}</td><td>${t.name}</td><td>${t.played}</td><td>${t.won}</td><td>${t.lost}</td><td>${t.tied}</td><td>${t.nrr.toFixed(3)}</td><td><strong>${t.points}</strong></td>`;
-        body.appendChild(row);
-    });
+    const all = Object.values(pts).sort((a, b) => b.points - a.points || b.nrr - a.nrr);
+
+    function renderPointsBody(bodyId, teamList) {
+        const body = document.getElementById(bodyId);
+        if (!body) return;
+        body.innerHTML = '';
+        if (!teamList.length) {
+            body.innerHTML = '<tr><td colspan="8" class="no-data-cell">No data yet</td></tr>';
+            return;
+        }
+        teamList.forEach((t, i) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${i+1}</td><td>${displayTeamName(t.name)}</td><td>${t.played}</td><td>${t.won}</td><td>${t.lost}</td><td>${t.tied}</td><td>${t.nrr.toFixed(3)}</td><td><strong>${t.points}</strong></td>`;
+            body.appendChild(row);
+        });
+    }
+
+    renderPointsBody('pointsTableBodyMen',   all.filter(t => !isWomensTeam(t.name)));
+    renderPointsBody('pointsTableBodyWomen', all.filter(t =>  isWomensTeam(t.name)));
 }
 
 // ========================================
@@ -1004,52 +1051,70 @@ async function loadPreviousMatchCommentary(matchId) {
 // ========================================
 async function loadStats() {
     const { data: matches } = await db.from('matches').select('*').eq('status', 'completed');
-    const playerStats = {};
+
+    // Build two separate stat buckets
+    const menStats    = {};
+    const womenStats  = {};
 
     (matches || []).forEach(m => {
         if (!m.innings) return;
+        // A match is women's if either team name ends with (Women's)
+        const isWomens = isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name);
+        const bucket   = isWomens ? womenStats : menStats;
+
         m.innings.forEach(inn => {
             inn.batsmen?.forEach(b => {
                 const k = b.name + '||' + inn.battingTeamName;
-                if (!playerStats[k]) playerStats[k] = { name: b.name, team: inn.battingTeamName, runs: 0, wickets: 0, wBalls: 0, wRuns: 0, motmCount: 0 };
-                playerStats[k].runs += b.runs || 0;
+                if (!bucket[k]) bucket[k] = { name: b.name, team: inn.battingTeamName, runs: 0, wickets: 0, wBalls: 0, wRuns: 0, motmCount: 0 };
+                bucket[k].runs += b.runs || 0;
             });
             inn.bowlers?.forEach(b => {
                 const k = b.name + '||' + inn.fieldingTeamName;
-                if (!playerStats[k]) playerStats[k] = { name: b.name, team: inn.fieldingTeamName, runs: 0, wickets: 0, wBalls: 0, wRuns: 0, motmCount: 0 };
-                playerStats[k].wickets += b.wickets || 0;
-                playerStats[k].wBalls  += b.balls   || 0;
-                playerStats[k].wRuns   += b.runs    || 0;
+                if (!bucket[k]) bucket[k] = { name: b.name, team: inn.fieldingTeamName, runs: 0, wickets: 0, wBalls: 0, wRuns: 0, motmCount: 0 };
+                bucket[k].wickets += b.wickets || 0;
+                bucket[k].wBalls  += b.balls   || 0;
+                bucket[k].wRuns   += b.runs    || 0;
             });
         });
         if (m.man_of_the_match) {
-            Object.keys(playerStats).forEach(k => {
-                if (playerStats[k].name === m.man_of_the_match.name) playerStats[k].motmCount++;
+            Object.keys(bucket).forEach(k => {
+                if (bucket[k].name === m.man_of_the_match.name) bucket[k].motmCount++;
             });
         }
     });
 
-    const all = Object.values(playerStats);
+    function renderStats(suffix, bucket) {
+        const all = Object.values(bucket);
 
-    const battingBody = document.getElementById('battingRankingsBody');
-    battingBody.innerHTML = '';
-    [...all].sort((a, b) => b.runs - a.runs).slice(0, 10).forEach((p, i) => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${p.team||'-'}</td><td><strong>${p.runs}</strong></td>`;
-        battingBody.appendChild(row);
-    });
+        const battingBody = document.getElementById('battingRankingsBody' + suffix);
+        if (battingBody) {
+            battingBody.innerHTML = '';
+            [...all].sort((a, b) => b.runs - a.runs).slice(0, 10).forEach((p, i) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.runs}</strong></td>`;
+                battingBody.appendChild(row);
+            });
+        }
 
-    const bowlingBody = document.getElementById('bowlingRankingsBody');
-    bowlingBody.innerHTML = '';
-    [...all].sort((a, b) => b.wickets !== a.wickets ? b.wickets - a.wickets : (a.wRuns/(a.wBalls||1)) - (b.wRuns/(b.wBalls||1))).slice(0, 10).forEach((p, i) => {
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${p.team||'-'}</td><td><strong>${p.wickets}</strong></td>`;
-        bowlingBody.appendChild(row);
-    });
+        const bowlingBody = document.getElementById('bowlingRankingsBody' + suffix);
+        if (bowlingBody) {
+            bowlingBody.innerHTML = '';
+            [...all].sort((a, b) => b.wickets !== a.wickets ? b.wickets - a.wickets : (a.wRuns/(a.wBalls||1)) - (b.wRuns/(b.wBalls||1))).slice(0, 10).forEach((p, i) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${displayTeamName(p.team)||'-'}</td><td><strong>${p.wickets}</strong></td>`;
+                bowlingBody.appendChild(row);
+            });
+        }
 
-    const mvp = [...all].sort((a, b) => b.motmCount !== a.motmCount ? b.motmCount - a.motmCount : b.runs - a.runs)[0];
-    document.getElementById('mvpName').textContent   = (mvp?.runs > 0) ? mvp.name : 'No data yet';
-    document.getElementById('mvpPoints').textContent = (mvp?.runs > 0) ? `${mvp.runs} runs | ${mvp.wickets} wickets | ${mvp.motmCount} MOTM award(s)` : '';
+        const mvp = [...all].sort((a, b) => b.motmCount !== a.motmCount ? b.motmCount - a.motmCount : b.runs - a.runs)[0];
+        const mvpNameEl   = document.getElementById('mvpName'   + suffix);
+        const mvpPointsEl = document.getElementById('mvpPoints' + suffix);
+        if (mvpNameEl)   mvpNameEl.textContent   = mvp ? mvp.name : 'No data yet';
+        if (mvpPointsEl) mvpPointsEl.textContent = mvp ? `${mvp.motmCount} MOTM award${mvp.motmCount !== 1 ? 's' : ''} · ${mvp.runs} runs · ${mvp.wickets} wickets` : '';
+    }
+
+    renderStats('Men',   menStats);
+    renderStats('Women', womenStats);
 }
 
 // ========================================
