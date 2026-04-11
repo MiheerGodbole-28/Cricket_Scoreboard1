@@ -1614,13 +1614,10 @@ function refreshScoringUI() {
         const bowler     = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
         document.getElementById('currentStriker').textContent    = striker?.name    || '-';
         document.getElementById('strikerStats').textContent      = striker    ? `${striker.runs}(${striker.balls})`                              : '0(0)';
-        const isLastManAloneNow = inn.lastManStanding && !inn.nonStriker && !inn.allOut && inn.striker;
-        document.getElementById('currentNonStriker').textContent = isLastManAloneNow ? '🏏 Last Man Standing' : (nonStriker?.name || '-');
-        document.getElementById('nonStrikerStats').textContent   = isLastManAloneNow ? '—' : (nonStriker ? `${nonStriker.runs}(${nonStriker.balls})` : '0(0)');
+        document.getElementById('currentNonStriker').textContent = nonStriker?.name || '-';
+        document.getElementById('nonStrikerStats').textContent   = nonStriker ? `${nonStriker.runs}(${nonStriker.balls})`                        : '0(0)';
         document.getElementById('currentBowler').textContent     = bowler?.name     || '-';
         document.getElementById('bowlerStats').textContent       = bowler     ? `${bowler.wickets}-${bowler.runs} (${formatOvers(bowler.balls)})` : '0-0 (0.0)';
-        // Hide change-strike when last batsman is alone — no one to swap with
-        document.getElementById('strikeChangeBtn').style.display = isLastManAloneNow ? 'none' : '';
 
         if (inningsLocked) {
             scoringControls.classList.add('hidden');
@@ -1776,9 +1773,7 @@ async function startInnings() {
 
     const { data: teamData } = await db.from('teams').select('players').eq('id', battingTeam.id).single();
     const rosterSize = teamData?.players?.length || 11;
-    // Women's matches use Last Man Standing: every player can be dismissed (maxWickets = rosterSize)
-    const isWomens   = isWomensTeam(battingTeam.name) || isWomensTeam(fieldingTeam.name);
-    const maxWickets = isWomens ? rosterSize : Math.max(rosterSize - 1, 1);
+    const maxWickets = Math.max(rosterSize - 1, 1);
 
     const newInnings = {
         inningsNumber:    inningsIdx + 1,
@@ -1790,8 +1785,7 @@ async function startInnings() {
         batsmen: [], bowlers: [],
         striker: null, nonStriker: null, bowler: null, thisOver: [],
         maxWickets,
-        allOut: false,
-        lastManStanding: isWomens   // enables Last Man Standing rule
+        allOut: false
     };
 
     const updatedInnings = [...(match.innings || []), newInnings];
@@ -2033,11 +2027,12 @@ function closeNoBallModal() {
 // batsmanRuns = runs scored off the bat (0, 1, 2, 3, 4, or 6).
 // The 1 no-ball penalty is always added on top.
 async function confirmNoBall(batsmanRuns) {
+    // Save BEFORE closeNoBallModal() resets _noBallWithWicket to false
+    const withWicket = _noBallWithWicket;
     closeNoBallModal();
     // Total runs credited to the team: 1 (penalty) + batsman runs
     await recordBall(1 + batsmanRuns, true, 'noball', batsmanRuns);
-    if (_noBallWithWicket) {
-        _noBallWithWicket = false;
+    if (withWicket) {
         showWicketModal('noball'); // Run Out and Stumped are valid off a no-ball
     }
 }
@@ -2104,11 +2099,7 @@ async function showWicketModal(context) {
 
     const newBatsmanGroup = document.getElementById('newBatsmanGroup');
     const nbs             = document.getElementById('newBatsmanSelect');
-    // Last Man Standing: suppress new-batsman selector one wicket earlier —
-    // when the penultimate batsman falls, the last player bats alone (not all out yet).
-    const isLastWicket = inn.lastManStanding
-        ? (inn.wickets + 1) >= maxWickets - 1
-        : (inn.wickets + 1) >= maxWickets;
+    const isLastWicket    = (inn.wickets + 1) >= maxWickets;
 
     const oldNotice = document.getElementById('lastWicketNotice');
     if (oldNotice) oldNotice.remove();
@@ -2118,13 +2109,10 @@ async function showWicketModal(context) {
         nbs.removeAttribute('required');
         nbs.innerHTML = '<option value="">N/A - innings ending</option>';
 
-        const isActuallyLastWicket = (inn.wickets + 1) >= maxWickets;
         const notice = document.createElement('p');
         notice.id        = 'lastWicketNotice';
         notice.className = 'last-wicket-notice';
-        notice.innerHTML = (inn.lastManStanding && !isActuallyLastWicket)
-            ? `<strong>⚡ LAST MAN STANDING</strong> — Wicket ${inn.wickets + 1}/${maxWickets}. The remaining batsman will bat alone.`
-            : `<strong>⚡ LAST WICKET</strong> — This is wicket ${inn.wickets + 1}/${maxWickets}. No new batsman needed; innings will be marked all out.`;
+        notice.innerHTML = `<strong>⚡ LAST WICKET</strong> — This is wicket ${inn.wickets + 1}/${maxWickets}. No new batsman needed; innings will be marked all out.`;
         newBatsmanGroup.insertAdjacentElement('beforebegin', notice);
     } else {
         newBatsmanGroup.classList.remove('hidden');
@@ -2201,21 +2189,10 @@ async function handleWicket(e) {
 
     const isAllOut = inn.wickets >= maxWickets;
 
-    // Last Man Standing: the penultimate wicket leaves 1 batsman to bat alone
-    const isLastManAlone = inn.lastManStanding && inn.wickets === maxWickets - 1 && !isAllOut;
-
     if (isAllOut) {
         inn.allOut = true;
         if (outId === inn.striker)    inn.striker    = null;
         else                          inn.nonStriker = null;
-    } else if (isLastManAlone) {
-        // Sole survivor takes the striker's end; no non-striker exists
-        if (outId === inn.striker) {
-            inn.striker    = inn.nonStriker;
-            inn.nonStriker = null;
-        } else {
-            inn.nonStriker = null;
-        }
     } else if (nbv) {
         const [nid, nname] = nbv.split('||');
         inn.batsmen.push({
@@ -2369,10 +2346,9 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     //           strike must NEVER rotate regardless of the run value.
     // No-balls: rotate based on batsman runs only (penalty run does not count).
     // All other deliveries: rotate based on total runs.
-    // Last Man Standing (alone): no non-striker to swap with — skip rotation.
     const strikeRunsForRotation = (extraType === 'wide')   ? 0 :
                                   (extraType === 'noball') ? batsmanRuns : runs;
-    if (strikeRunsForRotation % 2 === 1 && inn.nonStriker !== null) {
+    if (strikeRunsForRotation % 2 === 1) {
         const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
     }
     inn.batsmen = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
@@ -2415,8 +2391,7 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
         // In cricket, at end of over the non-striker faces the next over.
         // The run-based rotation above already swapped if odd runs were scored.
         // So we only need to swap HERE if even runs were scored (striker unchanged).
-        // Last Man Standing (alone): no non-striker — skip end-of-over swap too.
-        if (strikeRunsForRotation % 2 === 0 && inn.nonStriker !== null) {
+        if (strikeRunsForRotation % 2 === 0) {
             const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
             inn.batsmen = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
         }
