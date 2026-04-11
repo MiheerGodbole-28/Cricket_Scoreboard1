@@ -1967,8 +1967,9 @@ async function handleWicket(e) {
     currentScoringMatch = { ...match, innings };
     closeWicketModal();
 
-    if (!isAllOut && wicketOverComplete) showEndOfOverPrompt();
-    else                                 refreshScoringUI();
+    const allOversNowDoneW = inn.balls >= match.total_overs * 6;
+    if (!isAllOut && wicketOverComplete && !allOversNowDoneW) showEndOfOverPrompt();
+    else                                                      refreshScoringUI();
 }
 
 // ========================================
@@ -2146,8 +2147,12 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
         return;
     }
 
-    if (overComplete) showEndOfOverPrompt();
-    else              refreshScoringUI();
+    // Only show the change-bowler prompt if there are more overs to bowl.
+    // If this was the final over, go straight to refreshScoringUI which will
+    // show the "overs complete" banner — no 7th bowler should ever be selected.
+    const allOversNowDone = inn.balls >= match.total_overs * 6;
+    if (overComplete && !allOversNowDone) showEndOfOverPrompt();
+    else                                  refreshScoringUI();
 }
 
 // ========================================
@@ -2219,7 +2224,10 @@ async function endMatch() {
             if (!groupedB[b.name]) groupedB[b.name] = { name: b.name, wickets: 0, runs: 0, balls: 0 };
             groupedB[b.name].wickets += b.wickets; groupedB[b.name].runs += b.runs; groupedB[b.name].balls += b.balls;
         });
-        bestBowler    = Object.values(groupedB).sort((a, b) => b.wickets !== a.wickets ? b.wickets - a.wickets : (a.runs/(a.balls||1)) - (b.runs/(b.balls||1)))[0] || null;
+        // Exclude bowlers who never actually bowled a ball (e.g. a phantom 7th bowler
+        // selected merely to dismiss the end-of-over modal on the final over).
+        const eligibleBowlers = Object.values(groupedB).filter(b => b.balls > 0);
+        bestBowler    = eligibleBowlers.sort((a, b) => b.wickets !== a.wickets ? b.wickets - a.wickets : (a.runs/(a.balls||1)) - (b.runs/(b.balls||1)))[0] || null;
         manOfTheMatch = bestBatsman;
     }
 
