@@ -20,9 +20,10 @@ let currentScoringMatch   = null;
 let lastBalls             = [];   // undo stack
 
 // Gender filter state — 'men' or 'women'
-let _liveGender  = 'men';
-let _prevGender  = 'men';
-let _teamsGender = 'men';
+let _liveGender    = 'men';
+let _prevGender    = 'men';
+let _teamsGender   = 'men';
+let _scoringGender = 'men';
 
 // Cached match lists for gender re-filtering without re-fetching
 let _allLiveMatches = [];
@@ -180,6 +181,13 @@ function switchGenderTab(btn) {
     } else if (section === 'viewteams') {
         _teamsGender = gender;
         _renderPublicTeams(_allTeams);
+    } else if (section === 'scoring') {
+        _scoringGender = gender;
+        // Reset the interface if a match was in progress — switching gender clears selection
+        document.getElementById('scoringInterface').classList.add('hidden');
+        document.getElementById('scoringMatchSelect').value = '';
+        currentScoringMatch = null;
+        loadScoringInterface();
     }
 }
 
@@ -1244,9 +1252,22 @@ async function loadStats() {
 async function loadScoringInterface() {
     const { data: matches } = await db
         .from('matches').select('*').in('status', ['upcoming', 'live']);
+
+    const filtered = (matches || []).filter(m =>
+        _scoringGender === 'women'
+            ? isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name)
+            : !isWomensTeam(m.team1?.name) && !isWomensTeam(m.team2?.name)
+    );
+
     const sel = document.getElementById('scoringMatchSelect');
     sel.innerHTML = '<option value="">-- Select Match --</option>';
-    (matches || []).forEach(m => sel.add(new Option(`${m.team1.name} vs ${m.team2.name} (${m.status})`, m.id)));
+
+    if (!filtered.length) {
+        sel.add(new Option(`No ${_scoringGender === 'women' ? "women's" : "men's"} matches available`, ''));
+        return;
+    }
+
+    filtered.forEach(m => sel.add(new Option(`${m.team1.name} vs ${m.team2.name} (${m.status})`, m.id)));
 }
 
 async function handleScoringMatchSelect() {
@@ -2222,3 +2243,4 @@ async function undoLastBall() {
     refreshScoringUI();
     showMessage('Last ball undone.');
 }
+document.getElementById("hard-refresh-btn").addEventListener("click", () => location.reload(true));

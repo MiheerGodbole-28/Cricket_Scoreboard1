@@ -2037,6 +2037,51 @@ body {
   .gender-tab { font-size: 12px; padding: 9px 14px; letter-spacing: 0.03em; }
 }
 
+.refresh-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+}
+
+.btn-ghost {
+  background: var(--white);
+  border: 1px solid var(--border-dark);
+  color: var(--gray-600);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn-ghost:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
+  color: var(--gray-800);
+}
+
+.btn-ghost:active {
+  background: var(--gray-100);
+}
+
+.btn-ghost.btn-hard-refresh {
+  border-color: var(--green-400);
+  color: var(--green-700);
+}
+
+.btn-ghost.btn-hard-refresh:hover {
+  background: var(--green-50);
+  border-color: var(--green-500);
+  color: var(--green-800);
+}
+
 /* ── Gender Sub-Tabs (Men's / Women's) ─────────────────────── */
 .gender-tabs {
   display: flex;
@@ -2047,7 +2092,7 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-.gender-tabs::-webkit-scrollbar { width: 0; height: 0; }
+.gender-tabs::-webkit-scrollbar { display: none; }
 
 .gender-tab {
   font-family: var(--font-display);

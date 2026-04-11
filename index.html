@@ -36,6 +36,10 @@
         </div>
     </header>
 
+    <div class="refresh-bar">
+        <button class="btn btn-ghost btn-hard-refresh" id="hard-refresh-btn">⟳ Hard Refresh</button>
+    </div>
+
     <div id="refreshIndicator" class="refresh-indicator">
         🟢 Live
     </div>
@@ -465,8 +469,8 @@
                                 <input type="datetime-local" id="matchDateTime" name="matchDateTime" required>
                             </div>
                             <div class="form-group">
-                                <label for="matchType">Match-Type</label>
-                                <input type="text" id="matchVenue" name="matchVenue" placeholder="e.g., League-Match" required>
+                                <label for="matchVenue">Venue</label>
+                                <input type="text" id="matchVenue" name="matchVenue" placeholder="e.g., Wankhede Stadium" required>
                             </div>
                             <button type="submit" class="btn btn-primary">Create Match</button>
                         </form>
@@ -484,6 +488,11 @@
         <section id="scoringTab" class="tab-content admin-only hidden">
             <div class="container">
                 <h2 class="section-title">Score Match</h2>
+
+                <div class="gender-tabs">
+                    <button class="gender-tab active" data-gender="men" data-section="scoring" type="button">🏏 Men's</button>
+                    <button class="gender-tab" data-gender="women" data-section="scoring" type="button">🏏 Women's</button>
+                </div>
 
                 <div class="match-selector">
                     <label for="scoringMatchSelect">Select Match to Score</label>
@@ -711,7 +720,7 @@
 
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2025 VrindaOne Premiere League. All rights reserved.</p>
+            <p>&copy; 2026 Miheer Godbole. All rights reserved.</p>
         </div>
     </footer>
 
