@@ -1212,30 +1212,47 @@ function _buildExtrasFromBalls(balls, innings) {
         const et    = ball.extra_type;
         const entry = map[num];
 
-        // All extras contribute to the team's extras total
-        entry.totalExtras += (ball.runs || 0);
-
-        if (et === 'wide') {
-            entry.totalWides += 1;
-            // Wide descriptions are "WIDE + N runs" — no bowler name embedded,
-            // so we only have innings-level wide counts for old balls.
-            // For new balls recorded after the code update the bowler wides field
-            // is stored on the innings JSON directly, so the fallback below handles it.
-        } else if (et === 'noball') {
+        // For extras total: no-balls only count 1 (the penalty run), NOT batsman runs.
+        // Wides, byes, legbyes count their full run value.
+        if (et === 'noball') {
+            entry.totalExtras  += 1;
             entry.totalNoballs += 1;
-            // NB description: "NO BALL. 1 penalty run. Batsman off BowlerName."
-            // or "NO BALL + N run(s). Batsman off BowlerName. Total: ..."
-            const m2 = (ball.description || '').match(/off ([^.]+)\./);
-            if (m2) {
-                const bn = m2[1].trim();
+        } else if (et === 'wide') {
+            entry.totalExtras += (ball.runs || 0);
+            entry.totalWides  += 1;
+        } else {
+            // bye / legbye — all runs count as extras
+            entry.totalExtras += (ball.runs || 0);
+        }
+
+        // Attribute wides and no-balls to the individual bowler.
+        // Prefer the new bowler_name column; fall back to parsing the description.
+        if (et === 'wide' || et === 'noball') {
+            let bn = ball.bowler_name || null;
+
+            // Legacy fallback: parse description text
+            if (!bn) {
+                // New commentary format:  "BowlerName to BatsmanName, wide/no ball ..."
+                const newFmt = (ball.description || '').match(/^(.+?) to .+?, (?:wide|no ball)/i);
+                if (newFmt) {
+                    bn = newFmt[1].trim();
+                } else if (et === 'noball') {
+                    // Old NB format: "NO BALL. ... Batsman off BowlerName."
+                    const oldNb = (ball.description || '').match(/off ([^.]+)\./);
+                    if (oldNb) bn = oldNb[1].trim();
+                }
+            }
+
+            if (bn) {
                 if (!entry.byBowlerName[bn]) entry.byBowlerName[bn] = { wides: 0, noballs: 0 };
-                entry.byBowlerName[bn].noballs += 1;
+                if (et === 'wide')   entry.byBowlerName[bn].wides   += 1;
+                if (et === 'noball') entry.byBowlerName[bn].noballs += 1;
             }
         }
     });
 
-    // Also merge any wides/noballs already stored on the innings bowler objects
-    // (these exist for matches recorded after the code update)
+    // Merge wides/noballs stored directly on innings bowler objects
+    // (authoritative for matches scored after those fields were added)
     innings.forEach((inn, i) => {
         const num = i + 1;
         if (!map[num]) return;
@@ -1244,17 +1261,16 @@ function _buildExtrasFromBalls(balls, innings) {
             const nb = b.noballs || 0;
             if (w > 0 || nb > 0) {
                 if (!map[num].byBowlerName[b.name]) map[num].byBowlerName[b.name] = { wides: 0, noballs: 0 };
-                // Use the max of what we counted from balls table vs what's stored on the object
-                // to avoid double-counting (stored value is authoritative for new matches)
+                // Use the stored value if it's larger (it's the ground truth for new matches)
                 map[num].byBowlerName[b.name].wides   = Math.max(map[num].byBowlerName[b.name].wides,   w);
                 map[num].byBowlerName[b.name].noballs = Math.max(map[num].byBowlerName[b.name].noballs, nb);
             }
         });
-        // Same for innings-level extras: use stored value if it's larger (more accurate)
-        const storedExtras = inn.extras || 0;
-        if (storedExtras > map[num].totalExtras) map[num].totalExtras = storedExtras;
+        // Use stored extras/wides/noballs totals if they're larger than what we counted
+        const storedExtras  = inn.extras || 0;
         const storedWides   = (inn.bowlers||[]).reduce((s, b) => s + (b.wides||0),   0);
         const storedNoballs = (inn.bowlers||[]).reduce((s, b) => s + (b.noballs||0), 0);
+        if (storedExtras  > map[num].totalExtras)  map[num].totalExtras  = storedExtras;
         if (storedWides   > map[num].totalWides)   map[num].totalWides   = storedWides;
         if (storedNoballs > map[num].totalNoballs) map[num].totalNoballs = storedNoballs;
     });
@@ -1577,19 +1593,19 @@ function refreshScoringUI() {
             if (targetEl) targetEl.textContent = `CRR: ${crr}`;
         }
 
-        // Need batsmen / bowler selection first (but NOT if innings is already locked)
-        if (!inningsLocked && (!inn.striker || !inn.bowler)) {
-            if (!inn.striker) showBatsmenSelection();
-            else              showBowlerSelection();
-            return;
-        }
-
         // ── Innings state ────────────────────────────────────────
         const maxWickets    = inn.maxWickets ?? 10;
         const totalBalls    = match.total_overs * 6;
         const isAllOut      = inn.allOut === true || inn.wickets >= maxWickets;
         const oversComplete = inn.balls >= totalBalls;
         const inningsLocked = isAllOut || oversComplete;
+
+        // Need batsmen / bowler selection first (but NOT if innings is already locked)
+        if (!inningsLocked && (!inn.striker || !inn.bowler)) {
+            if (!inn.striker) showBatsmenSelection();
+            else              showBowlerSelection();
+            return;
+        }
 
         // Update current-player panel
         currentPlayers.classList.remove('hidden');
@@ -1598,10 +1614,13 @@ function refreshScoringUI() {
         const bowler     = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
         document.getElementById('currentStriker').textContent    = striker?.name    || '-';
         document.getElementById('strikerStats').textContent      = striker    ? `${striker.runs}(${striker.balls})`                              : '0(0)';
-        document.getElementById('currentNonStriker').textContent = nonStriker?.name || '-';
-        document.getElementById('nonStrikerStats').textContent   = nonStriker ? `${nonStriker.runs}(${nonStriker.balls})`                        : '0(0)';
+        const isLastManAloneNow = inn.lastManStanding && !inn.nonStriker && !inn.allOut && inn.striker;
+        document.getElementById('currentNonStriker').textContent = isLastManAloneNow ? '🏏 Last Man Standing' : (nonStriker?.name || '-');
+        document.getElementById('nonStrikerStats').textContent   = isLastManAloneNow ? '—' : (nonStriker ? `${nonStriker.runs}(${nonStriker.balls})` : '0(0)');
         document.getElementById('currentBowler').textContent     = bowler?.name     || '-';
         document.getElementById('bowlerStats').textContent       = bowler     ? `${bowler.wickets}-${bowler.runs} (${formatOvers(bowler.balls)})` : '0-0 (0.0)';
+        // Hide change-strike when last batsman is alone — no one to swap with
+        document.getElementById('strikeChangeBtn').style.display = isLastManAloneNow ? 'none' : '';
 
         if (inningsLocked) {
             scoringControls.classList.add('hidden');
@@ -1757,7 +1776,9 @@ async function startInnings() {
 
     const { data: teamData } = await db.from('teams').select('players').eq('id', battingTeam.id).single();
     const rosterSize = teamData?.players?.length || 11;
-    const maxWickets = Math.max(rosterSize - 1, 1);
+    // Women's matches use Last Man Standing: every player can be dismissed (maxWickets = rosterSize)
+    const isWomens   = isWomensTeam(battingTeam.name) || isWomensTeam(fieldingTeam.name);
+    const maxWickets = isWomens ? rosterSize : Math.max(rosterSize - 1, 1);
 
     const newInnings = {
         inningsNumber:    inningsIdx + 1,
@@ -1769,7 +1790,8 @@ async function startInnings() {
         batsmen: [], bowlers: [],
         striker: null, nonStriker: null, bowler: null, thisOver: [],
         maxWickets,
-        allOut: false
+        allOut: false,
+        lastManStanding: isWomens   // enables Last Man Standing rule
     };
 
     const updatedInnings = [...(match.innings || []), newInnings];
@@ -2082,7 +2104,11 @@ async function showWicketModal(context) {
 
     const newBatsmanGroup = document.getElementById('newBatsmanGroup');
     const nbs             = document.getElementById('newBatsmanSelect');
-    const isLastWicket    = (inn.wickets + 1) >= maxWickets;
+    // Last Man Standing: suppress new-batsman selector one wicket earlier —
+    // when the penultimate batsman falls, the last player bats alone (not all out yet).
+    const isLastWicket = inn.lastManStanding
+        ? (inn.wickets + 1) >= maxWickets - 1
+        : (inn.wickets + 1) >= maxWickets;
 
     const oldNotice = document.getElementById('lastWicketNotice');
     if (oldNotice) oldNotice.remove();
@@ -2092,10 +2118,13 @@ async function showWicketModal(context) {
         nbs.removeAttribute('required');
         nbs.innerHTML = '<option value="">N/A - innings ending</option>';
 
+        const isActuallyLastWicket = (inn.wickets + 1) >= maxWickets;
         const notice = document.createElement('p');
         notice.id        = 'lastWicketNotice';
         notice.className = 'last-wicket-notice';
-        notice.innerHTML = `<strong>⚡ LAST WICKET</strong> — This is wicket ${inn.wickets + 1}/${maxWickets}. No new batsman needed; innings will be marked all out.`;
+        notice.innerHTML = (inn.lastManStanding && !isActuallyLastWicket)
+            ? `<strong>⚡ LAST MAN STANDING</strong> — Wicket ${inn.wickets + 1}/${maxWickets}. The remaining batsman will bat alone.`
+            : `<strong>⚡ LAST WICKET</strong> — This is wicket ${inn.wickets + 1}/${maxWickets}. No new batsman needed; innings will be marked all out.`;
         newBatsmanGroup.insertAdjacentElement('beforebegin', notice);
     } else {
         newBatsmanGroup.classList.remove('hidden');
@@ -2172,10 +2201,21 @@ async function handleWicket(e) {
 
     const isAllOut = inn.wickets >= maxWickets;
 
+    // Last Man Standing: the penultimate wicket leaves 1 batsman to bat alone
+    const isLastManAlone = inn.lastManStanding && inn.wickets === maxWickets - 1 && !isAllOut;
+
     if (isAllOut) {
         inn.allOut = true;
         if (outId === inn.striker)    inn.striker    = null;
         else                          inn.nonStriker = null;
+    } else if (isLastManAlone) {
+        // Sole survivor takes the striker's end; no non-striker exists
+        if (outId === inn.striker) {
+            inn.striker    = inn.nonStriker;
+            inn.nonStriker = null;
+        } else {
+            inn.nonStriker = null;
+        }
     } else if (nbv) {
         const [nid, nname] = nbv.split('||');
         inn.batsmen.push({
@@ -2205,7 +2245,7 @@ async function handleWicket(e) {
 
     const bowlerObj    = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
     const allOutSuffix = isAllOut ? ' — ALL OUT!' : '';
-    const description  = `${outName} ${wicketType}${fielder ? ' by ' + fielder : ''} — WICKET! b. ${bowlerObj?.name || 'Unknown'}${allOutSuffix}`;
+    const description  = `${bowlerObj?.name || 'Unknown'} to ${outName}, OUT! ${wicketType}${fielder ? ' by ' + fielder : ''}${allOutSuffix}`;
 
     const { error } = await db.from('matches').update({ innings }).eq('id', match.id);
     if (error) { showMessage('Error recording wicket: ' + error.message); return; }
@@ -2220,7 +2260,9 @@ async function handleWicket(e) {
         batsman_out:    outName,
         over_ball:      inn.balls,
         description,
-        innings_number: match.current_innings
+        innings_number: match.current_innings,
+        bowler_name:    bowlerObj?.name || null,
+        batsman_name:   outName || null
     });
 
     currentScoringMatch = { ...match, innings };
@@ -2327,9 +2369,10 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     //           strike must NEVER rotate regardless of the run value.
     // No-balls: rotate based on batsman runs only (penalty run does not count).
     // All other deliveries: rotate based on total runs.
+    // Last Man Standing (alone): no non-striker to swap with — skip rotation.
     const strikeRunsForRotation = (extraType === 'wide')   ? 0 :
                                   (extraType === 'noball') ? batsmanRuns : runs;
-    if (strikeRunsForRotation % 2 === 1) {
+    if (strikeRunsForRotation % 2 === 1 && inn.nonStriker !== null) {
         const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
     }
     inn.batsmen = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
@@ -2339,28 +2382,32 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     const overComplete = !isExtra && inn.balls % 6 === 0 && inn.balls > 0;
 
     // ── Commentary ───────────────────────────────────────────────
+    // Professional format: "BowlerName to BatsmanName, description"
     let description = '';
+    const commPrefix = `${bowler.name} to ${striker.name}, `;
     if (isExtra) {
         if (extraType === 'noball') {
             if (batsmanRuns === 0)
-                description = `NO BALL. 1 penalty run. ${striker.name} off ${bowler.name}.`;
+                description = `${commPrefix}no ball, 1 penalty run`;
             else if (batsmanRuns === 4)
-                description = `NO BALL + FOUR! ${striker.name} hits ${bowler.name} for 4. Total: ${runs} runs.`;
+                description = `${commPrefix}no ball! FOUR (${runs} runs total)`;
             else if (batsmanRuns === 6)
-                description = `NO BALL + SIX! ${striker.name} hits ${bowler.name} for 6. Total: ${runs} runs.`;
+                description = `${commPrefix}no ball! SIX (${runs} runs total)`;
             else
-                description = `NO BALL + ${batsmanRuns} run(s). ${striker.name} off ${bowler.name}. Total: ${runs} runs.`;
+                description = `${commPrefix}no ball, ${batsmanRuns} run(s) off bat (${runs} total)`;
+        } else if (extraType === 'wide') {
+            description = `${commPrefix}wide`;
         } else {
-            description = `${extraType.toUpperCase()} + ${runs} runs`;
+            description = `${commPrefix}${extraType}, ${runs} run(s)`;
         }
     } else if (runs === 0) {
-        description = `Dot ball. ${striker.name} to ${bowler.name}`;
+        description = `${commPrefix}dot ball`;
     } else if (runs === 4) {
-        description = `FOUR! ${striker.name} hits ${bowler.name} for 4`;
+        description = `${commPrefix}FOUR!`;
     } else if (runs === 6) {
-        description = `SIX! ${striker.name} hits ${bowler.name} for 6`;
+        description = `${commPrefix}SIX!`;
     } else {
-        description = `${runs} run(s). ${striker.name} off ${bowler.name}`;
+        description = `${commPrefix}${runs} run(s)`;
     }
 
     // ── End-of-over handling ─────────────────────────────────────
@@ -2368,7 +2415,8 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
         // In cricket, at end of over the non-striker faces the next over.
         // The run-based rotation above already swapped if odd runs were scored.
         // So we only need to swap HERE if even runs were scored (striker unchanged).
-        if (strikeRunsForRotation % 2 === 0) {
+        // Last Man Standing (alone): no non-striker — skip end-of-over swap too.
+        if (strikeRunsForRotation % 2 === 0 && inn.nonStriker !== null) {
             const t = inn.striker; inn.striker = inn.nonStriker; inn.nonStriker = t;
             inn.batsmen = inn.batsmen.map(b => ({ ...b, isStriker: b.id === inn.striker }));
         }
@@ -2406,7 +2454,9 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
         is_wicket:      false,
         over_ball:      overBall,
         description,
-        innings_number: match.current_innings
+        innings_number: match.current_innings,
+        bowler_name:    bowler.name  || null,
+        batsman_name:   striker.name || null
     });
 
     currentScoringMatch = { ...match, innings };
