@@ -105,6 +105,26 @@
                         <div id="partnershipDetails" class="partnership-info"></div>
                     </div>
 
+                    <!-- CRR / Target info for public readers -->
+                    <div id="publicMatchInfo" class="public-match-info hidden">
+                        <div id="publicCRR" class="public-crr"></div>
+                        <div id="publicTarget" class="public-target"></div>
+                    </div>
+
+                    <!-- 1st innings scorecard — shown during 2nd innings -->
+                    <div id="firstInningsSection" class="innings-section hidden">
+                        <h4>1st Innings — <span id="firstInningsTeamName"></span></h4>
+                        <table class="scorecard-table">
+                            <thead><tr><th>Batsman</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th><th>Status</th></tr></thead>
+                            <tbody id="firstInningsBattingBody"></tbody>
+                            <tfoot id="firstInningsBattingFooter"></tfoot>
+                        </table>
+                        <table class="scorecard-table" style="margin-top:0.5rem">
+                            <thead><tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th><th>WD</th><th>NB</th></tr></thead>
+                            <tbody id="firstInningsBowlingBody"></tbody>
+                        </table>
+                    </div>
+
                     <div class="ball-by-ball">
                         <h4>Ball by Ball Commentary
                             <button id="loadCommentaryBtn" class="btn btn-secondary" type="button">Show Commentary ▼</button>
@@ -141,8 +161,9 @@
                                     <th>M</th>
                                     <th>R</th>
                                     <th>W</th>
-                                    <th>Ext</th>
                                     <th>Econ</th>
+                                    <th>WD</th>
+                                    <th>NB</th>
                                 </tr>
                             </thead>
                             <tbody id="bowlingTableBody"></tbody>
@@ -340,7 +361,7 @@
                             <h4>Innings 1 Bowling</h4>
                             <table class="scorecard-table">
                                 <thead>
-                                    <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Ext</th><th>Econ</th></tr>
+                                    <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th><th>WD</th><th>NB</th></tr>
                                 </thead>
                                 <tbody id="prevInnings1BowlingBody"></tbody>
                             </table>
@@ -366,7 +387,7 @@
                             <h4>Innings 2 Bowling</h4>
                             <table class="scorecard-table">
                                 <thead>
-                                    <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Ext</th><th>Econ</th></tr>
+                                    <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th><th>WD</th><th>NB</th></tr>
                                 </thead>
                                 <tbody id="prevInnings2BowlingBody"></tbody>
                             </table>
@@ -469,8 +490,8 @@
                                 <input type="datetime-local" id="matchDateTime" name="matchDateTime" required>
                             </div>
                             <div class="form-group">
-                                <label for="matchVenue">Match-Type</label>
-                                <input type="text" id="matchVenue" name="matchVenue" placeholder="e.g., League Match" required>
+                                <label for="matchVenue">Venue</label>
+                                <input type="text" id="matchVenue" name="matchVenue" placeholder="e.g., Wankhede Stadium" required>
                             </div>
                             <button type="submit" class="btn btn-primary">Create Match</button>
                         </form>
@@ -607,6 +628,8 @@
                         <div class="extras-buttons">
                             <button class="extra-btn" type="button" data-extra="wide">Wide</button>
                             <button class="extra-btn" type="button" data-extra="noball">No Ball</button>
+                            <button class="extra-btn extra-btn--wicket" type="button" data-extra="wide-wicket">Wide + Wicket</button>
+                            <button class="extra-btn extra-btn--wicket" type="button" data-extra="noball-wicket">NB + Wicket</button>
                             <button class="extra-btn" type="button" data-extra="bye">Bye</button>
                             <button class="extra-btn" type="button" data-extra="legbye">Leg Bye</button>
                         </div>
