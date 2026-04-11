@@ -509,6 +509,14 @@ async function handleAddMatch(e) {
 
     if (team1Id === team2Id) { showMessage('Please select different teams!'); return; }
 
+    // Fix: datetime-local gives "YYYY-MM-DDTHH:MM" with no timezone.
+    // new Date(string) on Android Chrome treats it as UTC, not local time.
+    // Parsing manually with new Date(y, m, d, h, min) always uses local time.
+    const [datePart, timePart] = dateTime.split('T');
+    const [year, month, day]   = datePart.split('-').map(Number);
+    const [hours, minutes]     = timePart.split(':').map(Number);
+    const localDate = new Date(year, month - 1, day, hours, minutes);
+
     const { data: teams, error: teamErr } = await db
         .from('teams').select('*').in('id', [team1Id, team2Id]);
     if (teamErr) { showMessage('Error fetching teams: ' + teamErr.message); return; }
@@ -520,7 +528,7 @@ async function handleAddMatch(e) {
         team1:           { id: team1.id, name: team1.name, shortName: team1.short_name },
         team2:           { id: team2.id, name: team2.name, shortName: team2.short_name },
         total_overs:     totalOvers,
-        date_time:       new Date(dateTime).toISOString(),
+        date_time:       localDate.toISOString(),
         venue,
         status:          'upcoming',
         current_innings: 0,
