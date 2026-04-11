@@ -832,7 +832,8 @@ function _renderFirstInningsSection(match) {
     if (battingFooter) {
         const wides   = i1.bowlers?.reduce((s, b) => s + (b.wides||0), 0) || 0;
         const noballs = i1.bowlers?.reduce((s, b) => s + (b.noballs||0), 0) || 0;
-        const extras  = i1.extras || 0;
+        const batsmanTotal = i1.batsmen?.reduce((s, b) => s + (b.runs||0), 0) || 0;
+        const extras = (i1.extras != null) ? i1.extras : Math.max(0, (i1.runs || 0) - batsmanTotal);
         let extDetail = [];
         if (wides   > 0) extDetail.push(`wd ${wides}`);
         if (noballs > 0) extDetail.push(`nb ${noballs}`);
@@ -929,7 +930,10 @@ function loadBattingScorecard(match) {
     if (footer) {
         const wides   = inn.bowlers?.reduce((s, b) => s + (b.wides||0), 0) || 0;
         const noballs = inn.bowlers?.reduce((s, b) => s + (b.noballs||0), 0) || 0;
-        const extras  = inn.extras || 0;
+        // If inn.extras is stored use it; otherwise derive from team total minus all batsman runs
+        const batsmanTotal = inn.batsmen?.reduce((s, b) => s + (b.runs||0), 0) || 0;
+        const derivedExtras = Math.max(0, (inn.runs || 0) - batsmanTotal);
+        const extras  = (inn.extras != null) ? inn.extras : derivedExtras;
         const extRow  = document.createElement('tr');
         extRow.className = 'extras-row';
         let extDetail = [];
@@ -1165,14 +1169,17 @@ function _togglePrevDetails(matchId, cardEl) {
 }
 
 async function showPreviousMatchDetails(matchId) {
-    const { data: m, error } = await db.from('matches').select('*').eq('id', matchId).single();
+    const [{ data: m, error }, { data: balls }] = await Promise.all([
+        db.from('matches').select('*').eq('id', matchId).single(),
+        db.from('balls').select('*').eq('match_id', matchId).order('created_at', { ascending: true })
+    ]);
     if (error || !m) { showMessage('Match not found'); return; }
 
     document.getElementById('previousMatchDetails').classList.remove('hidden');
     document.getElementById('prevMatchTitle').textContent  = `${m.team1.name} vs ${m.team2.name}`;
     document.getElementById('prevMatchResult').textContent = m.result || 'Result pending';
     document.getElementById('prevMotm').textContent        = m.man_of_the_match?.name || '-';
-    document.getElementById('prevBestBat').textContent     = m.best_batsman  ? `${m.best_batsman.name} (${m.best_batsman.runs})`                         : '-';
+    document.getElementById('prevBestBat').textContent     = m.best_batsman  ? `${m.best_batsman.name} (${m.best_batsman.runs})`                        : '-';
     document.getElementById('prevBestBowl').textContent    = m.best_bowler   ? `${m.best_bowler.name} (${m.best_bowler.wickets}/${m.best_bowler.runs})` : '-';
 
     if (m.innings?.length >= 2) {
@@ -1183,18 +1190,89 @@ async function showPreviousMatchDetails(matchId) {
         document.getElementById('prevTeam2Name').textContent  = i2.battingTeamName;
         document.getElementById('prevTeam2Score').textContent = `${i2.runs}/${i2.wickets}`;
         document.getElementById('prevTeam2Overs').textContent = `(${formatOvers(i2.balls)} ov)`;
-        loadPreviousInningsScorecard(i1, 1);
-        loadPreviousInningsScorecard(i2, 2);
-        // FIX 3: Load ball-by-ball commentary per innings from the balls table
-        loadPreviousMatchCommentary(matchId);
+
+        const extrasMap = _buildExtrasFromBalls(balls || [], m.innings);
+        loadPreviousInningsScorecard(i1, 1, extrasMap[1]);
+        loadPreviousInningsScorecard(i2, 2, extrasMap[2]);
+        loadPreviousMatchCommentary(matchId, balls || []);
     }
 }
 
-function loadPreviousInningsScorecard(innings, num) {
-    const battingBody  = document.getElementById(`prevInnings${num}BattingBody`);
-    const bowlingBody  = document.getElementById(`prevInnings${num}BowlingBody`);
-    battingBody.innerHTML = '';
-    bowlingBody.innerHTML = '';
+// Reconstruct per-innings wides/noballs/extras from the balls table rows.
+// Returns { 1: { totalExtras, totalWides, totalNoballs, byBowlerName }, 2: {...} }
+function _buildExtrasFromBalls(balls, innings) {
+    const map = {
+        1: { totalExtras: 0, totalWides: 0, totalNoballs: 0, byBowlerName: {} },
+        2: { totalExtras: 0, totalWides: 0, totalNoballs: 0, byBowlerName: {} }
+    };
+
+    balls.forEach(ball => {
+        const num = ball.innings_number;
+        if (!map[num] || !ball.is_extra) return;
+        const et    = ball.extra_type;
+        const entry = map[num];
+
+        // All extras contribute to the team's extras total
+        entry.totalExtras += (ball.runs || 0);
+
+        if (et === 'wide') {
+            entry.totalWides += 1;
+            // Wide descriptions are "WIDE + N runs" — no bowler name embedded,
+            // so we only have innings-level wide counts for old balls.
+            // For new balls recorded after the code update the bowler wides field
+            // is stored on the innings JSON directly, so the fallback below handles it.
+        } else if (et === 'noball') {
+            entry.totalNoballs += 1;
+            // NB description: "NO BALL. 1 penalty run. Batsman off BowlerName."
+            // or "NO BALL + N run(s). Batsman off BowlerName. Total: ..."
+            const m2 = (ball.description || '').match(/off ([^.]+)\./);
+            if (m2) {
+                const bn = m2[1].trim();
+                if (!entry.byBowlerName[bn]) entry.byBowlerName[bn] = { wides: 0, noballs: 0 };
+                entry.byBowlerName[bn].noballs += 1;
+            }
+        }
+    });
+
+    // Also merge any wides/noballs already stored on the innings bowler objects
+    // (these exist for matches recorded after the code update)
+    innings.forEach((inn, i) => {
+        const num = i + 1;
+        if (!map[num]) return;
+        (inn.bowlers || []).forEach(b => {
+            const w  = b.wides   || 0;
+            const nb = b.noballs || 0;
+            if (w > 0 || nb > 0) {
+                if (!map[num].byBowlerName[b.name]) map[num].byBowlerName[b.name] = { wides: 0, noballs: 0 };
+                // Use the max of what we counted from balls table vs what's stored on the object
+                // to avoid double-counting (stored value is authoritative for new matches)
+                map[num].byBowlerName[b.name].wides   = Math.max(map[num].byBowlerName[b.name].wides,   w);
+                map[num].byBowlerName[b.name].noballs = Math.max(map[num].byBowlerName[b.name].noballs, nb);
+            }
+        });
+        // Same for innings-level extras: use stored value if it's larger (more accurate)
+        const storedExtras = inn.extras || 0;
+        if (storedExtras > map[num].totalExtras) map[num].totalExtras = storedExtras;
+        const storedWides   = (inn.bowlers||[]).reduce((s, b) => s + (b.wides||0),   0);
+        const storedNoballs = (inn.bowlers||[]).reduce((s, b) => s + (b.noballs||0), 0);
+        if (storedWides   > map[num].totalWides)   map[num].totalWides   = storedWides;
+        if (storedNoballs > map[num].totalNoballs) map[num].totalNoballs = storedNoballs;
+    });
+
+    return map;
+}
+
+function loadPreviousInningsScorecard(innings, num, extrasData) {
+    // extrasData = { totalExtras, totalWides, totalNoballs, byBowlerName: { name: {wides,noballs} } }
+    // Falls back to innings object fields for new matches that stored them directly.
+    const ed = extrasData || {};
+
+    const battingBody   = document.getElementById(`prevInnings${num}BattingBody`);
+    const battingFooter = document.getElementById(`prevInnings${num}BattingFooter`);
+    const bowlingBody   = document.getElementById(`prevInnings${num}BowlingBody`);
+    battingBody.innerHTML  = '';
+    bowlingBody.innerHTML  = '';
+    if (battingFooter) battingFooter.innerHTML = '';
 
     if (innings.batsmen?.length) {
         innings.batsmen.forEach(b => {
@@ -1203,17 +1281,24 @@ function loadPreviousInningsScorecard(innings, num) {
             row.innerHTML = `<td>${b.name}</td><td>${b.runs}</td><td>${b.balls}</td><td>${b.fours||0}</td><td>${b.sixes||0}</td><td>${calculateStrikeRate(b.runs,b.balls)}</td><td>${statusText}</td>`;
             battingBody.appendChild(row);
         });
-        // Extras + Total rows
-        const wides   = innings.bowlers?.reduce((s, b) => s + (b.wides||0), 0) || 0;
-        const noballs = innings.bowlers?.reduce((s, b) => s + (b.noballs||0), 0) || 0;
-        const extras  = innings.extras || 0;
+
+        // Use reconstructed extras data (from balls table) if available, else fall back to stored fields
+        const totalWides   = ed.totalWides   ?? (innings.bowlers?.reduce((s, b) => s + (b.wides||0),   0) || 0);
+        const totalNoballs = ed.totalNoballs ?? (innings.bowlers?.reduce((s, b) => s + (b.noballs||0), 0) || 0);
+        const totalExtras  = ed.totalExtras  ?? (innings.extras || 0);
+
         let extDetail = [];
-        if (wides   > 0) extDetail.push(`wd ${wides}`);
-        if (noballs > 0) extDetail.push(`nb ${noballs}`);
-        battingBody.insertAdjacentHTML('beforeend',
-            `<tr class="extras-row"><td><strong>Extras</strong></td><td><strong>${extras}</strong></td><td colspan="5" class="extras-detail">${extDetail.length ? '(' + extDetail.join(', ') + ')' : ''}</td></tr>` +
-            `<tr class="total-row"><td><strong>Total</strong></td><td><strong>${innings.runs}</strong></td><td colspan="5"><strong>${innings.wickets} wkts, ${formatOvers(innings.balls)} Ov (RR: ${calculateEconomy(innings.runs, innings.balls)})</strong></td></tr>`
-        );
+        if (totalWides   > 0) extDetail.push(`wd ${totalWides}`);
+        if (totalNoballs > 0) extDetail.push(`nb ${totalNoballs}`);
+
+        const extrasHTML = `<tr class="extras-row"><td><strong>Extras</strong></td><td><strong>${totalExtras}</strong></td><td colspan="5" class="extras-detail">${extDetail.length ? '(' + extDetail.join(', ') + ')' : ''}</td></tr>`;
+        const totalHTML  = `<tr class="total-row"><td><strong>Total</strong></td><td><strong>${innings.runs}</strong></td><td colspan="5"><strong>${innings.wickets} wkts, ${formatOvers(innings.balls)} Ov (RR: ${calculateEconomy(innings.runs, innings.balls)})</strong></td></tr>`;
+
+        if (battingFooter) {
+            battingFooter.innerHTML = extrasHTML + totalHTML;
+        } else {
+            battingBody.insertAdjacentHTML('beforeend', extrasHTML + totalHTML);
+        }
     } else {
         battingBody.innerHTML = '<tr><td colspan="7" class="no-data-cell">No data</td></tr>';
     }
@@ -1222,7 +1307,11 @@ function loadPreviousInningsScorecard(innings, num) {
         innings.bowlers.forEach(b => {
             if (!b.balls && !b.runs && !b.wickets) return;
             const row = document.createElement('tr');
-            row.innerHTML = `<td>${b.name}</td><td>${formatOvers(b.balls)}</td><td>${b.maidens||0}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${calculateEconomy(b.runs,b.balls)}</td><td>${b.wides||0}</td><td>${b.noballs||0}</td>`;
+            // Use per-bowler wides/noballs from the balls table reconstruction if available
+            const bn = ed.byBowlerName?.[b.name] || {};
+            const wides   = Math.max(b.wides   || 0, bn.wides   || 0);
+            const noballs = Math.max(b.noballs || 0, bn.noballs || 0);
+            row.innerHTML = `<td>${b.name}</td><td>${formatOvers(b.balls)}</td><td>${b.maidens||0}</td><td>${b.runs}</td><td>${b.wickets}</td><td>${calculateEconomy(b.runs,b.balls)}</td><td>${wides}</td><td>${noballs}</td>`;
             bowlingBody.appendChild(row);
         });
     } else {
@@ -1230,26 +1319,22 @@ function loadPreviousInningsScorecard(innings, num) {
     }
 }
 
-// FIX 3: Ball-by-ball commentary per innings for previous matches
-async function loadPreviousMatchCommentary(matchId) {
-    const { data, error } = await db
-        .from('balls')
-        .select('*')
-        .eq('match_id', matchId)
-        .order('innings_number', { ascending: true })
-        .order('created_at', { ascending: true });
-
+// Ball-by-ball commentary for previous matches — accepts pre-fetched balls array
+function loadPreviousMatchCommentary(matchId, balls) {
     [1, 2].forEach(num => {
         const container = document.getElementById(`prevInnings${num}Commentary`);
         if (!container) return;
         container.innerHTML = '';
 
-        if (error || !data?.length) {
+        if (!balls?.length) {
             container.innerHTML = '<p class="no-data-cell">No ball data recorded</p>';
             return;
         }
 
-        const inningsBalls = data.filter(b => b.innings_number === num);
+        const inningsBalls = balls
+            .filter(b => b.innings_number === num)
+            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
         if (!inningsBalls.length) {
             container.innerHTML = '<p class="no-data-cell">No balls recorded for this innings</p>';
             return;
@@ -1510,7 +1595,7 @@ function refreshScoringUI() {
         currentPlayers.classList.remove('hidden');
         const striker    = inn.batsmen?.find(b => b.id === inn.striker);
         const nonStriker = inn.batsmen?.find(b => b.id === inn.nonStriker);
-        const bowler     = inn.bowlers?.find(b => b.id === inn.bowler);
+        const bowler     = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
         document.getElementById('currentStriker').textContent    = striker?.name    || '-';
         document.getElementById('strikerStats').textContent      = striker    ? `${striker.runs}(${striker.balls})`                              : '0(0)';
         document.getElementById('currentNonStriker').textContent = nonStriker?.name || '-';
@@ -1745,7 +1830,7 @@ async function showBatsmenSelection() {
 function showEndOfOverPrompt() {
     const match = currentScoringMatch;
     const inn   = match.innings[match.current_innings - 1];
-    const bowler = inn.bowlers?.find(b => b.id === inn.bowler);
+    const bowler = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
     const overNum = Math.floor(inn.balls / 6);
 
     const modal  = document.getElementById('endOfOverModal');
@@ -1864,16 +1949,16 @@ async function confirmBowler() {
     const inn     = { ...innings[idx] };
     const bowlers = [...(inn.bowlers || [])];
 
-    if (!bowlers.find(b => b.id === bid)) {
+    if (!bowlers.find(b => String(b.id) === bid)) {
         bowlers.push({ id: bid, name: bname, balls: 0, runs: 0, wickets: 0, maidens: 0, extras: 0, wides: 0, noballs: 0 });
     } else {
-        // Ensure wides/noballs fields exist on returning bowlers (migration safety)
-        const idx2 = bowlers.findIndex(b => b.id === bid);
-        if (idx2 !== -1) bowlers[idx2] = { wides: 0, noballs: 0, ...bowlers[idx2] };
+        // Ensure wides/noballs fields exist on returning bowlers, and normalise id to string
+        const idx2 = bowlers.findIndex(b => String(b.id) === bid);
+        if (idx2 !== -1) bowlers[idx2] = { wides: 0, noballs: 0, ...bowlers[idx2], id: bid };
     }
 
     inn.bowlers  = bowlers;
-    inn.bowler   = bid;
+    inn.bowler   = String(bid);
     // Clear the previous over's deliveries now that a new over is beginning
     inn.thisOver = [];
     innings[idx] = inn;
@@ -2076,9 +2161,13 @@ async function handleWicket(e) {
 
     inn.wickets = (inn.wickets || 0) + 1;
 
+    // Normalise all bowler IDs to strings to prevent number vs string mismatch
+    inn.bowlers = inn.bowlers.map(b => ({ wides: 0, noballs: 0, ...b, id: String(b.id) }));
+    const wicketBowlerId = String(inn.bowler);
+
     const bowlerCredited = ['Bowled', 'Caught', 'LBW', 'Stumped', 'Hit Wicket'];
     if (bowlerCredited.includes(wicketType)) {
-        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler ? { ...b, wickets: (b.wickets||0) + 1 } : b);
+        inn.bowlers = inn.bowlers.map(b => b.id === wicketBowlerId ? { ...b, wickets: (b.wickets||0) + 1 } : b);
     }
 
     const isAllOut = inn.wickets >= maxWickets;
@@ -2105,7 +2194,7 @@ async function handleWicket(e) {
     const isExtraWicket = _wicketContext === 'wide' || _wicketContext === 'noball';
     if (!isExtraWicket) {
         inn.balls   = (inn.balls || 0) + 1;
-        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler ? { ...b, balls: (b.balls||0) + 1 } : b);
+        inn.bowlers = inn.bowlers.map(b => b.id === wicketBowlerId ? { ...b, balls: (b.balls||0) + 1 } : b);
     }
     inn.thisOver = [...(inn.thisOver || []), { runs: 0, isWicket: true }];
 
@@ -2114,7 +2203,7 @@ async function handleWicket(e) {
 
     innings[idx] = inn;
 
-    const bowlerObj    = inn.bowlers?.find(b => b.id === inn.bowler);
+    const bowlerObj    = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
     const allOutSuffix = isAllOut ? ' — ALL OUT!' : '';
     const description  = `${outName} ${wicketType}${fielder ? ' by ' + fielder : ''} — WICKET! b. ${bowlerObj?.name || 'Unknown'}${allOutSuffix}`;
 
@@ -2173,7 +2262,7 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     }
 
     const striker = inn.batsmen?.find(b => b.id === inn.striker);
-    const bowler  = inn.bowlers?.find(b => b.id === inn.bowler);
+    const bowler  = inn.bowlers?.find(b => String(b.id) === String(inn.bowler));
     if (!striker || !bowler) { showMessage('Please set batsmen and bowler first.'); return; }
 
     // FIX 2: Snapshot state BEFORE modification so undo restores to pre-ball state.
@@ -2186,7 +2275,10 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
     inn.runs = (inn.runs || 0) + runs;
 
     // Ensure wides/noballs fields exist on all bowler objects (migration safety)
-    inn.bowlers = inn.bowlers.map(b => ({ wides: 0, noballs: 0, ...b }));
+    // Also normalise all bowler IDs to strings to avoid number vs string mismatches
+    inn.bowlers = inn.bowlers.map(b => ({ wides: 0, noballs: 0, ...b, id: String(b.id) }));
+    // Normalise inn.bowler to string too
+    const currentBowlerId = String(inn.bowler);
 
     // ── Batsman & ball counts ────────────────────────────────────
     if (!isExtra) {
@@ -2200,12 +2292,12 @@ async function recordBall(runs, isExtra, extraType, batsmanRuns = 0) {
               }
             : b);
         inn.balls   = (inn.balls || 0) + 1;
-        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler
+        inn.bowlers = inn.bowlers.map(b => b.id === currentBowlerId
             ? { ...b, runs: (b.runs||0) + runs, balls: (b.balls||0) + 1 }
             : b);
     } else {
         // Extra delivery: bowler concedes all runs; ball count only increases for bye/legbye
-        inn.bowlers = inn.bowlers.map(b => b.id === inn.bowler
+        inn.bowlers = inn.bowlers.map(b => b.id === currentBowlerId
             ? { ...b, runs: (b.runs||0) + runs, extras: (b.extras||0) + 1,
                 wides:   extraType === 'wide'   ? (b.wides||0)   + 1 : (b.wides||0),
                 noballs: extraType === 'noball' ? (b.noballs||0) + 1 : (b.noballs||0) }
