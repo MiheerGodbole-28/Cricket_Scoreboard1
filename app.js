@@ -334,7 +334,10 @@ async function _fetchAndRenderLiveMatches() {
 function formatDate(dateStr) {
     if (!dateStr) return '';
     const d = new Date(dateStr);
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // Force en-GB locale so every device always shows DD/MM/YYYY, never MM/DD/YYYY
+    const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return date + '  ' + time.toUpperCase();
 }
 
 function calculateStrikeRate(runs, balls) {
@@ -2260,6 +2263,4 @@ async function undoLastBall() {
     refreshScoringUI();
     showMessage('Last ball undone.');
 }
-
-document.getElementById("refresh-btn").addEventListener("click", loadAll);
 document.getElementById("hard-refresh-btn").addEventListener("click", () => location.reload(true));
