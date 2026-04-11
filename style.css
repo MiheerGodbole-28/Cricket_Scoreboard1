@@ -466,6 +466,20 @@ body {
   font-style: italic;
 }
 
+.match-start-time {
+  font-family: var(--font-score);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green-600);
+  background: var(--green-50);
+  border: 1px solid var(--border-green);
+  border-radius: var(--radius-xs);
+  padding: 4px 8px;
+  margin-top: 10px;
+  display: inline-block;
+  letter-spacing: 0.02em;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    MATCH DETAILS — LIVE VIEW
 ═══════════════════════════════════════════════════════════════ */

@@ -567,12 +567,20 @@ function renderLiveMatchesList(matches) {
     // Cache the full unfiltered list so gender switching doesn't need a re-fetch
     _allLiveMatches = matches;
 
-    // Filter by active gender tab
-    const filtered = matches.filter(m =>
-        _liveGender === 'women'
-            ? isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name)
-            : !isWomensTeam(m.team1?.name) && !isWomensTeam(m.team2?.name)
-    );
+    // Filter by active gender tab, then re-sort by date_time so the order
+    // is always chronological within each gender section
+    const filtered = matches
+        .filter(m =>
+            _liveGender === 'women'
+                ? isWomensTeam(m.team1?.name) || isWomensTeam(m.team2?.name)
+                : !isWomensTeam(m.team1?.name) && !isWomensTeam(m.team2?.name)
+        )
+        .sort((a, b) => {
+            // LIVE matches always float to the top, upcoming sorted by start time
+            if (a.status === 'live' && b.status !== 'live') return -1;
+            if (b.status === 'live' && a.status !== 'live') return  1;
+            return new Date(a.date_time) - new Date(b.date_time);
+        });
 
     const container = document.getElementById('liveMatchesList');
     const details   = document.getElementById('matchDetails');
@@ -632,7 +640,8 @@ function renderLiveMatchesList(matches) {
                 <span class="team-name">${t2Label}</span>
                 <span class="team-score">${t2Score}</span>
             </div>
-            <p class="match-venue">${m.venue}</p>`;
+            <p class="match-venue">${m.venue}</p>
+            ${m.status === 'upcoming' && m.date_time ? `<p class="match-start-time">🕐 ${formatDate(m.date_time)}</p>` : ''}`;
         container.appendChild(card);
     });
 
@@ -2243,4 +2252,6 @@ async function undoLastBall() {
     refreshScoringUI();
     showMessage('Last ball undone.');
 }
+
+document.getElementById("refresh-btn").addEventListener("click", loadAll);
 document.getElementById("hard-refresh-btn").addEventListener("click", () => location.reload(true));
